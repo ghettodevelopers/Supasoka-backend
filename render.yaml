@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: supasoka-backend
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: ./backend
+    buildCommand: npm install && npx prisma generate
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: JWT_SECRET
+        value: supasoka_jwt_secret_key_2024_production_ready_32chars_minimum
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: PUSHY_SECRET_API_KEY
+        value: 9ff8230c9879759ce1aa9a64ad33943a8ea9dfec8fae6326a16d57b7fdece717
+      - key: ALLOWED_ORIGINS
+        value: https://supasoka-backend.onrender.com,capacitor://localhost,ionic://localhost
+      - key: DATABASE_URL
+        value: ""
