@@ -14,16 +14,46 @@ const authMiddleware = async (req, res, next) => {
     
     // Check if it's an admin token
     if (decoded.type === 'admin') {
-      const admin = await prisma.admin.findUnique({
-        where: { id: decoded.id }
-      });
-      
-      if (!admin || !admin.isActive) {
-        return res.status(401).json({ error: 'Invalid admin token.' });
+      // For hardcoded admin (id: 1), skip database check
+      if (decoded.id === 1 || decoded.id === '1') {
+        req.admin = {
+          id: 1,
+          email: 'Ghettodevelopers@gmail.com',
+          name: 'Super Admin',
+          role: 'super_admin',
+          isActive: true
+        };
+        req.userType = 'admin';
+        return next();
       }
       
-      req.admin = admin;
-      req.userType = 'admin';
+      // For other admins, check database
+      try {
+        const admin = await prisma.admin.findUnique({
+          where: { id: decoded.id }
+        });
+        
+        if (!admin || !admin.isActive) {
+          return res.status(401).json({ error: 'Invalid admin token.' });
+        }
+        
+        req.admin = admin;
+        req.userType = 'admin';
+      } catch (dbError) {
+        // If database is unavailable but it's admin id 1, allow it
+        if (decoded.id === 1 || decoded.id === '1') {
+          req.admin = {
+            id: 1,
+            email: 'Ghettodevelopers@gmail.com',
+            name: 'Super Admin',
+            role: 'super_admin',
+            isActive: true
+          };
+          req.userType = 'admin';
+          return next();
+        }
+        throw dbError;
+      }
     } else {
       // Regular user token
       const userId = decoded.userId || decoded.id;
@@ -41,6 +71,7 @@ const authMiddleware = async (req, res, next) => {
     
     next();
   } catch (error) {
+    console.error('Auth middleware error:', error.message);
     res.status(401).json({ error: 'Invalid token.' });
   }
 };
