@@ -521,9 +521,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   filterBtn: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
     backgroundColor: '#1E293B',
     marginRight: 8,
   },
@@ -531,7 +531,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#6366F1',
   },
   filterText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#94A3B8',
     fontWeight: '600',
   },

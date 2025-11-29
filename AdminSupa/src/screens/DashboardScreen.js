@@ -357,7 +357,7 @@ const DashboardScreen = () => {
               <Text style={styles.emptyText}>No free channels available</Text>
               <TouchableOpacity 
                 style={styles.addButton}
-                onPress={() => navigation.navigate('Channels')}
+                onPress={() => navigation.navigate('Channels', { openFreeChannelModal: true })}
               >
                 <Text style={styles.addButtonText}>Add Free Channel</Text>
               </TouchableOpacity>

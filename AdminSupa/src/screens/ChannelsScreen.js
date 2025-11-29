@@ -30,7 +30,7 @@ const DEFAULT_CATEGORIES = [
   { id: 'religious', name: 'Religious', icon: '🕌' },
 ];
 
-const ChannelsScreen = () => {
+const ChannelsScreen = ({ route }) => {
   const [channels, setChannels] = useState([]);
   const [filteredChannels, setFilteredChannels] = useState([]);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
@@ -41,6 +41,7 @@ const ChannelsScreen = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingChannel, setEditingChannel] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [freeChannelModalVisible, setFreeChannelModalVisible] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     category: '',
@@ -60,6 +61,11 @@ const ChannelsScreen = () => {
   useEffect(() => {
     loadChannels();
     loadCategories();
+    
+    // Check if we should open free channel modal from navigation
+    if (route?.params?.openFreeChannelModal) {
+      setTimeout(() => openFreeChannelModal(), 500);
+    }
   }, []);
 
   useEffect(() => {
@@ -149,6 +155,26 @@ const ChannelsScreen = () => {
     setModalVisible(true);
   };
 
+  const openFreeChannelModal = () => {
+    setEditingChannel(null);
+    setFormData({
+      name: '',
+      category: categories[0]?.name || 'News',
+      logo: '',
+      streamUrl: '',
+      description: '',
+      color: ['#10B981', '#059669'],
+      hd: true,
+      isActive: true,
+      priority: 0,
+      drmConfig: null,
+      hasDRM: false,
+      clearKey: '',
+      isFree: true,
+    });
+    setFreeChannelModalVisible(true);
+  };
+
   const openEditModal = (channel) => {
     setEditingChannel(channel);
     const hasDRM = channel.drmConfig && channel.drmConfig.clearKey;
@@ -216,10 +242,11 @@ const ChannelsScreen = () => {
         Alert.alert('✅ Success', 'Channel updated successfully!');
       } else {
         await channelService.createChannel(channelData);
-        Alert.alert('✅ Success', 'Channel created successfully!');
+        Alert.alert('✅ Success', formData.isFree ? 'Free channel created successfully!' : 'Channel created successfully!');
       }
 
       setModalVisible(false);
+      setFreeChannelModalVisible(false);
       await loadChannels();
     } catch (error) {
       console.error('Save error:', error);
@@ -642,6 +669,190 @@ const ChannelsScreen = () => {
           </TouchableOpacity>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Free Channel Modal */}
+      <Modal
+        visible={freeChannelModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setFreeChannelModalVisible(false)}
+      >
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity 
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setFreeChannelModalVisible(false)}
+          >
+            <TouchableOpacity 
+              activeOpacity={1} 
+              onPress={(e) => e.stopPropagation()}
+              style={styles.modalContent}
+            >
+            <View style={styles.modalHeader}>
+              <View style={styles.freeChannelHeader}>
+                <Ionicons name="gift" size={24} color="#10B981" />
+                <Text style={styles.modalTitle}>Add Free Channel</Text>
+              </View>
+              <TouchableOpacity onPress={() => setFreeChannelModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#F1F5F9" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView 
+              style={styles.modalBody}
+              contentContainerStyle={styles.modalBodyContent}
+              showsVerticalScrollIndicator={true}
+              nestedScrollEnabled={true}
+            >
+              <View style={styles.freeChannelBanner}>
+                <Ionicons name="information-circle" size={20} color="#10B981" />
+                <Text style={styles.freeChannelBannerText}>
+                  Free channels are accessible to all users without subscription
+                </Text>
+              </View>
+
+              <Text style={[styles.label, { marginTop: 0 }]}>Channel Name *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter channel name"
+                placeholderTextColor="#64748B"
+                value={formData.name}
+                onChangeText={(text) =>
+                  setFormData({ ...formData, name: text })
+                }
+              />
+
+              <Text style={styles.label}>Category *</Text>
+              <View style={styles.categoryPicker}>
+                {categories.map((cat) => (
+                  <TouchableOpacity
+                    key={cat.id || cat.name}
+                    style={[
+                      styles.categoryOption,
+                      formData.category === cat.name &&
+                        styles.categoryOptionActive,
+                    ]}
+                    onPress={() =>
+                      setFormData({ ...formData, category: cat.name })
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.categoryOptionText,
+                        formData.category === cat.name &&
+                          styles.categoryOptionTextActive,
+                      ]}
+                    >
+                      {cat.icon} {cat.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.label}>Logo URL</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="https://example.com/logo.png"
+                placeholderTextColor="#64748B"
+                value={formData.logo}
+                onChangeText={(text) =>
+                  setFormData({ ...formData, logo: text })
+                }
+              />
+
+              <Text style={styles.label}>Stream URL *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="https://stream.example.com/channel.m3u8"
+                placeholderTextColor="#64748B"
+                value={formData.streamUrl}
+                onChangeText={(text) =>
+                  setFormData({ ...formData, streamUrl: text })
+                }
+              />
+
+              <Text style={styles.label}>Description</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Channel description..."
+                placeholderTextColor="#64748B"
+                value={formData.description}
+                onChangeText={(text) =>
+                  setFormData({ ...formData, description: text })
+                }
+                multiline
+                numberOfLines={3}
+              />
+
+              <View style={styles.switchRow}>
+                <Text style={styles.label}>HD Quality</Text>
+                <Switch
+                  value={formData.hd}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, hd: value })
+                  }
+                  trackColor={{ false: '#334155', true: '#10B981' }}
+                  thumbColor={formData.hd ? '#FFFFFF' : '#94A3B8'}
+                />
+              </View>
+
+              <View style={styles.switchRow}>
+                <Text style={styles.label}>Active</Text>
+                <Switch
+                  value={formData.isActive}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, isActive: value })
+                  }
+                  trackColor={{ false: '#334155', true: '#10B981' }}
+                  thumbColor={formData.isActive ? '#FFFFFF' : '#94A3B8'}
+                />
+              </View>
+
+              <Text style={styles.label}>Priority (for ordering)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="0"
+                placeholderTextColor="#64748B"
+                value={formData.priority.toString()}
+                onChangeText={(text) =>
+                  setFormData({
+                    ...formData,
+                    priority: parseInt(text) || 0,
+                  })
+                }
+                keyboardType="numeric"
+              />
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setFreeChannelModalVisible(false)}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.freeChannelSaveBtn, saving && styles.saveBtnDisabled]} 
+                onPress={handleSave}
+                disabled={saving}
+              >
+                {saving ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="gift" size={18} color="#FFFFFF" />
+                    <Text style={styles.saveBtnText}>Create Free Channel</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 };
@@ -705,9 +916,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   categoryBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
     backgroundColor: '#1E293B',
     marginRight: 8,
   },
@@ -715,10 +926,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#6366F1',
   },
   categoryText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#94A3B8',
     fontWeight: '600',
-    lineHeight: 16,
   },
   categoryTextActive: {
     color: '#FFFFFF',
@@ -955,6 +1165,38 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  freeChannelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  freeChannelBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10B98120',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#10B981',
+  },
+  freeChannelBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#10B981',
+    lineHeight: 18,
+  },
+  freeChannelSaveBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 8,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
 
