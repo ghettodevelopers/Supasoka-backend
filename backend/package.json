@@ -4,8 +4,8 @@
   "description": "Backend API for Supasoka TV streaming platform",
   "main": "server.js",
   "scripts": {
-    "start": "bash scripts/start.sh",
-    "start:prod": "NODE_ENV=production bash scripts/start.sh",
+    "start": "node scripts/start.js",
+    "start:prod": "NODE_ENV=production node scripts/start.js",
     "start:dev": "node server.js",
     "dev": "nodemon server.js",
     "setup": "node scripts/setup-sqlite.js",
