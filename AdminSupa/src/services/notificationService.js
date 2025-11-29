@@ -25,7 +25,18 @@ class NotificationService {
       if (type) params.append('type', type);
       
       const response = await api.get(`/notifications/admin/all?${params.toString()}`);
-      return response.data;
+      
+      // Add _count field for compatibility if not present
+      const notifications = response.data.notifications || [];
+      const notificationsWithCount = notifications.map(notif => ({
+        ...notif,
+        _count: notif._count || { userNotifications: notif.analytics?.totalSent || 0 }
+      }));
+      
+      return {
+        ...response.data,
+        notifications: notificationsWithCount
+      };
     } catch (error) {
       console.error('Error fetching notifications:', error);
       throw error;

@@ -244,6 +244,9 @@ router.get('/admin/all', authMiddleware, adminOnly, async (req, res) => {
       
       return {
         ...notif,
+        _count: {
+          userNotifications: totalSent
+        },
         analytics: {
           totalSent,
           delivered,

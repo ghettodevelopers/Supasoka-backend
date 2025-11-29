@@ -769,42 +769,51 @@ router.put('/contact-settings',
     try {
       const { whatsappNumber, callNumber, supportEmail } = req.body;
 
+      // Get admin email safely
+      const adminEmail = req.admin?.email || req.user?.email || 'admin';
+
       // Find existing settings or create new
       let contactSettings = await prisma.contactSettings.findFirst({
         where: { isActive: true }
       });
 
+      const updateData = {
+        whatsappNumber: whatsappNumber || null,
+        callNumber: callNumber || null,
+        supportEmail: supportEmail || null,
+        updatedBy: adminEmail
+      };
+
       if (contactSettings) {
         contactSettings = await prisma.contactSettings.update({
           where: { id: contactSettings.id },
-          data: {
-            whatsappNumber,
-            callNumber,
-            supportEmail,
-            updatedBy: req.admin.email
-          }
+          data: updateData
         });
       } else {
         contactSettings = await prisma.contactSettings.create({
           data: {
-            whatsappNumber,
-            callNumber,
-            supportEmail,
-            updatedBy: req.admin.email,
+            ...updateData,
             isActive: true
           }
         });
       }
 
-      // Emit setting change to admin dashboard
+      // Emit setting change to admin dashboard and user app
       const io = req.app.get('io');
-      io.to('admin-room').emit('contact-settings-updated', { contactSettings });
+      if (io) {
+        io.to('admin-room').emit('contact-settings-updated', { contactSettings });
+        io.emit('settings-updated', { type: 'contact', contactSettings });
+      }
 
-      logger.info(`Contact settings updated by ${req.admin.email}`);
+      logger.info(`Contact settings updated by ${adminEmail}`);
       res.json({ contactSettings });
     } catch (error) {
       logger.error('Error updating contact settings:', error);
-      res.status(500).json({ error: 'Failed to update contact settings' });
+      logger.error('Error details:', error.message);
+      res.status(500).json({ 
+        error: 'Failed to update contact settings',
+        details: error.message 
+      });
     }
   }
 );

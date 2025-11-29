@@ -2,17 +2,19 @@ import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { API_URL } from '../config/api';
 
-// Fallback URLs for AdminSupa (prioritize Render.com production)
+// Fallback URLs to try if primary fails
 const FALLBACK_URLS = [
-  'https://supasoka-backend.onrender.com/api', // Primary Render.com production
-  'http://localhost:5000/api', // Local development
-  'http://127.0.0.1:5000/api', // Local loopback
-  'http://10.0.2.2:5000/api', // Android emulator
-  'http://192.168.1.100:5000/api', // Common router IP
+  'http://10.74.21.98:10000/api', // Your local server (FIRST PRIORITY)
+  'http://localhost:10000/api', // Local development
+  'http://127.0.0.1:10000/api', // Local loopback
+  'https://supasoka-backend.onrender.com/api', // Production fallback
 ];
 
-// Always start with Render.com production URL
-let currentBaseURL = 'https://supasoka-backend.onrender.com/api';
+// Start with local development URL for Expo Go
+let currentBaseURL = API_URL;
+
+// Flag to prevent token clearing during login
+let isLoggingIn = false;
 
 const api = axios.create({
   baseURL: currentBaseURL,
@@ -46,12 +48,40 @@ const tryFallbackURL = async (error, config) => {
 api.interceptors.request.use(
   async (config) => {
     try {
-      const token = await SecureStore.getItemAsync('adminToken');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+      // Ensure headers object exists
+      if (!config.headers) {
+        config.headers = {};
+      }
+      
+      // First check if token is already set in axios defaults (faster)
+      const defaultToken = api.defaults.headers.common['Authorization'];
+      
+      if (defaultToken) {
+        config.headers['Authorization'] = defaultToken;
+        console.log('🔑 Using token from axios defaults');
+      } else {
+        // Fallback to SecureStore if not in defaults
+        const token = await SecureStore.getItemAsync('adminToken');
+        if (token) {
+          const bearerToken = `Bearer ${token}`;
+          config.headers['Authorization'] = bearerToken;
+          // Also set it in defaults for future requests
+          api.defaults.headers.common['Authorization'] = bearerToken;
+          console.log('🔑 Using token from SecureStore');
+        } else {
+          console.log('⚠️ No token found in axios defaults or SecureStore');
+        }
+      }
+      
+      // Log the final Authorization header (masked)
+      if (config.headers['Authorization']) {
+        const maskedToken = config.headers['Authorization'].substring(0, 20) + '...';
+        console.log(`📤 Request: ${config.method?.toUpperCase()} ${config.url} [Token: ${maskedToken}]`);
+      } else {
+        console.log(`📤 Request: ${config.method?.toUpperCase()} ${config.url} [No Token]`);
       }
     } catch (error) {
-      console.error('Error getting token:', error);
+      console.error('❌ Error in request interceptor:', error);
     }
     return config;
   },
@@ -93,9 +123,26 @@ api.interceptors.response.use(
     
     // Handle 401 Unauthorized
     if (error.response?.status === 401) {
-      console.log('❌ Unauthorized - clearing admin token');
-      await SecureStore.deleteItemAsync('adminToken');
-      // You can emit an event here to redirect to login
+      // Don't clear token if we're in the middle of logging in
+      // This prevents race conditions where login succeeds but subsequent requests fail
+      if (!isLoggingIn) {
+        console.log('❌ Unauthorized (401) - clearing admin token');
+        console.log('   Error:', error.response?.data?.error || 'Unknown');
+        console.log('   URL:', error.config?.url);
+        try {
+          await SecureStore.deleteItemAsync('adminToken');
+        } catch (e) {
+          console.log('   Note: SecureStore token already cleared');
+        }
+        // Clear token from axios defaults
+        delete api.defaults.headers.common['Authorization'];
+        delete api.defaults.headers['Authorization'];
+        console.log('🗑️ Auth token cleared from axios');
+        // You can emit an event here to redirect to login
+      } else {
+        console.log('⚠️ 401 during login process - NOT clearing token (login flag active)');
+        console.log('   This is expected - login flow is still in progress');
+      }
     }
     
     // Handle other HTTP errors
@@ -108,5 +155,25 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// Export functions to control login state
+export const setLoginInProgress = (value) => {
+  isLoggingIn = value;
+  console.log(`🔐 Login in progress: ${value}`);
+};
+
+// Helper function to set auth token
+export const setAuthToken = (token) => {
+  if (token) {
+    const bearerToken = `Bearer ${token}`;
+    api.defaults.headers.common['Authorization'] = bearerToken;
+    api.defaults.headers['Authorization'] = bearerToken;
+    console.log(`✅ Auth token set globally (first 20 chars): ${bearerToken.substring(0, 20)}...`);
+  } else {
+    delete api.defaults.headers.common['Authorization'];
+    delete api.defaults.headers['Authorization'];
+    console.log('🗑️ Auth token cleared');
+  }
+};
 
 export default api;
