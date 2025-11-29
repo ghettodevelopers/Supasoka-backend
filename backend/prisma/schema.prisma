@@ -54,11 +54,11 @@ model Channel {
   name           String
   logo           String?
   category       String
-  color          Json
+  color          String
   hd             Boolean         @default(true)
   streamUrl      String
-  backupUrls     Json?
-  drmConfig      Json?
+  backupUrls     String?
+  drmConfig      String?
   isActive       Boolean         @default(true)
   priority       Int             @default(0)
   description    String?
@@ -128,7 +128,7 @@ model Notification {
   title             String
   message           String
   type              String             @default("general")
-  targetUsers       Json?
+  targetUsers       String?
   isActive          Boolean            @default(true)
   scheduledAt       DateTime?
   sentAt            DateTime?
@@ -171,7 +171,7 @@ model Admin {
 model AppSettings {
   id          String   @id @default(cuid())
   key         String   @unique
-  value       Json
+  value       String
   description String?
   updatedBy   String?
   createdAt   DateTime @default(now())
@@ -188,7 +188,7 @@ model Analytics {
   newUsers        Int      @default(0)
   totalWatchTime  Int      @default(0)
   totalDownloads  Int      @default(0)
-  popularChannels Json?
+  popularChannels String?
   createdAt       DateTime @default(now())
 
   @@map("analytics")
@@ -198,10 +198,10 @@ model TranscodingJob {
   id              String    @id @default(cuid())
   channelId       String
   sourceUrl       String
-  targetQualities Json
+  targetQualities String
   status          String    @default("pending")
   progress        Int       @default(0)
-  outputUrls      Json?
+  outputUrls      String?
   errorMessage    String?
   userId          String
   createdAt       DateTime  @default(now())
@@ -327,7 +327,7 @@ model AdminAuditLog {
   action      String   // 'channel_create', 'channel_update', 'channel_delete', 'user_block', 'user_unblock', 'carousel_update', etc.
   entityType  String   // 'channel', 'user', 'carousel', 'notification', 'settings'
   entityId    String?
-  details     Json?    // Additional action details
+  details     String?    // Additional action details
   ipAddress   String?
   userAgent   String?
   createdAt   DateTime @default(now())
