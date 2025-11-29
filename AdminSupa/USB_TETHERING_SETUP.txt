@@ -1,0 +1,92 @@
+========================================
+USB TETHERING - QUICK SETUP
+========================================
+
+✅ I've already configured the app for USB tethering!
+
+========================================
+3 SIMPLE STEPS:
+========================================
+
+Step 1: Run ADB Reverse
+------------------------
+Open a terminal and run:
+
+    adb reverse tcp:5000 tcp:5000
+
+
+Step 2: Restart Expo
+---------------------
+    npx expo start --clear
+
+
+Step 3: Login
+-------------
+Email: Ghettodevelopers@gmail.com
+Password: Chundabadi
+
+
+========================================
+EVEN EASIER: Use the Batch File
+========================================
+
+Just double-click:  start-with-adb.bat
+
+It will automatically:
+✅ Setup ADB reverse
+✅ Start Expo
+
+
+========================================
+WHAT I CHANGED FOR YOU:
+========================================
+
+Before:
+    http://10.0.2.2:5000/api  ❌ Doesn't work with USB tethering
+
+After:
+    http://localhost:5000/api  ✅ Works with USB tethering
+
+
+========================================
+EXPECTED RESULT:
+========================================
+
+You should see in console:
+
+🔗 API Configuration:
+   Platform: android
+   API URL: http://localhost:5000/api
+
+🔐 Attempting login...
+   Email: Ghettodevelopers@gmail.com
+
+✅ Login successful!
+
+
+========================================
+REMEMBER:
+========================================
+
+Every time you restart the emulator, run:
+
+    adb reverse tcp:5000 tcp:5000
+
+Or just use: start-with-adb.bat
+
+
+========================================
+TROUBLESHOOTING:
+========================================
+
+If "adb command not found":
+- Install Android SDK Platform Tools
+
+If adb reverse fails:
+- Make sure emulator is running
+- Try: adb devices
+
+If still Network Error:
+- Check backend is running on port 5000
+- Restart backend and emulator
+- Run adb reverse again
