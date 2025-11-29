@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: free
     region: oregon
-    rootDir: ./backend
+    rootDir: backend
     buildCommand: npm install && npx prisma generate
     startCommand: npm start
     healthCheckPath: /health
@@ -21,5 +21,3 @@ services:
         value: 9ff8230c9879759ce1aa9a64ad33943a8ea9dfec8fae6326a16d57b7fdece717
       - key: ALLOWED_ORIGINS
         value: https://supasoka-backend.onrender.com,capacitor://localhost,ionic://localhost
-      - key: DATABASE_URL
-        value: ""
