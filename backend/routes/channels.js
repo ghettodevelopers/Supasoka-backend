@@ -592,7 +592,7 @@ router.get('/carousel/admin', authMiddleware, adminOnly, async (req, res) => {
     logger.error('Error fetching admin carousel images:', error.message);
     
     // If database unavailable, return empty array
-    logger.info('Database unavailable - returning empty carousel array');
+    logger.info('Database error - returning empty carousel array');
     res.json({ images: [] });
   }
 });
@@ -630,12 +630,9 @@ router.post('/carousel', authMiddleware, adminOnly, async (req, res) => {
     res.status(201).json({ image: carouselImage });
   } catch (error) {
     logger.error('Error creating carousel image:', error);
-    
-    // If database unavailable, return error but don't crash
-    logger.info('Database unavailable - cannot create carousel image');
-    res.status(503).json({
-      error: 'Database unavailable',
-      message: 'Cannot create carousel images without database connection'
+    res.status(500).json({
+      error: 'Failed to create carousel image',
+      details: error.message
     });
   }
 });
@@ -680,10 +677,9 @@ router.put('/carousel/:id', authMiddleware, adminOnly, async (req, res) => {
       return res.status(404).json({ error: 'Carousel image not found' });
     }
     logger.error('Error updating carousel image:', error);
-    logger.info('Database unavailable - cannot update carousel image');
-    res.status(503).json({
-      error: 'Database unavailable',
-      message: 'Cannot update carousel images without database connection'
+    res.status(500).json({
+      error: 'Failed to update carousel image',
+      details: error.message
     });
   }
 });
@@ -717,10 +713,9 @@ router.delete('/carousel/:id', authMiddleware, adminOnly, async (req, res) => {
       return res.status(404).json({ error: 'Carousel image not found' });
     }
     logger.error('Error deleting carousel image:', error);
-    logger.info('Database unavailable - cannot delete carousel image');
-    res.status(503).json({
-      error: 'Database unavailable',
-      message: 'Cannot delete carousel images without database connection'
+    res.status(500).json({
+      error: 'Failed to delete carousel image',
+      details: error.message
     });
   }
 });
@@ -757,10 +752,9 @@ router.patch('/carousel/reorder', authMiddleware, adminOnly, async (req, res) =>
     res.json({ images });
   } catch (error) {
     logger.error('Error reordering carousel images:', error);
-    logger.info('Database unavailable - cannot reorder carousel images');
-    res.status(503).json({
-      error: 'Database unavailable',
-      message: 'Cannot reorder carousel images without database connection'
+    res.status(500).json({
+      error: 'Failed to reorder carousel images',
+      details: error.message
     });
   }
 });
