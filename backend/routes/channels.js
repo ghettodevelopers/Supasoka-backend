@@ -192,6 +192,27 @@ router.get('/featured', async (req, res) => {
   }
 });
 
+// Get free channels (public endpoint) - MUST be before /:id route
+router.get('/free', async (req, res) => {
+  try {
+    const freeChannels = await prisma.channel.findMany({
+      where: {
+        isActive: true,
+        isFree: true
+      },
+      orderBy: [
+        { priority: 'desc' },
+        { createdAt: 'desc' }
+      ]
+    });
+
+    res.json({ channels: freeChannels });
+  } catch (error) {
+    logger.error('Error fetching free channels:', error.message);
+    res.json({ channels: [] });
+  }
+});
+
 // Get single channel
 router.get('/:id', async (req, res) => {
   try {
@@ -491,6 +512,69 @@ router.patch('/:id/toggle',
       }
       logger.error('Error toggling channel status:', error.message || error);
       res.status(500).json({ error: 'Failed to toggle channel status', details: error.message });
+    }
+  }
+);
+
+// Toggle channel free status (admin only)
+router.patch('/:id/toggle-free',
+  authMiddleware,
+  adminOnly,
+  async (req, res) => {
+    try {
+      const channelId = req.params.id;
+
+      // Only reject mock channel IDs
+      if (typeof channelId === 'string' && channelId.startsWith('mock-')) {
+        return res.status(503).json({ 
+          error: 'Database unavailable', 
+          message: 'Cannot modify mock channels. Database connection required.'
+        });
+      }
+
+      const channel = await prisma.channel.findUnique({
+        where: { id: channelId }
+      });
+
+      if (!channel) {
+        return res.status(404).json({ error: 'Channel not found' });
+      }
+
+      const updatedChannel = await prisma.channel.update({
+        where: { id: channelId },
+        data: { isFree: !channel.isFree }
+      });
+
+      // Notify about free status change
+      const io = req.app.get('io');
+      io.to('admin-room').emit('channel-free-status-changed', {
+        channelId,
+        isFree: updatedChannel.isFree,
+        channel: updatedChannel
+      });
+      
+      // Broadcast to all users
+      io.emit('channel-updated', {
+        action: 'free_status_changed',
+        channel: updatedChannel
+      });
+
+      // Send notification to users about free channel
+      if (updatedChannel.isFree) {
+        await notificationService.sendNewFreeChannelNotification(updatedChannel);
+      }
+
+      logger.info(`Channel ${updatedChannel.isFree ? 'marked as free' : 'marked as premium'}: ${updatedChannel.name} by admin ${req.admin.email}`);
+      res.json({ channel: updatedChannel });
+    } catch (error) {
+      if (error?.code === 'P2025') {
+        return res.status(404).json({ error: 'Channel not found' });
+      }
+      if (error?.name === 'PrismaClientInitializationError') {
+        return res.status(503).json({ error: 'Database unavailable. Please ensure PostgreSQL is running.' });
+      }
+      logger.error('Error toggling channel free status:', error.message || error);
+      res.status(500).json({ error: 'Failed to toggle channel free status', details: error.message });
     }
   }
 );
