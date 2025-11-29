@@ -145,6 +145,9 @@ model UserNotification {
   notificationId String
   isRead         Boolean      @default(false)
   readAt         DateTime?
+  clicked        Boolean      @default(false)
+  clickedAt      DateTime?
+  deliveredAt    DateTime?
   createdAt      DateTime     @default(now())
   notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)

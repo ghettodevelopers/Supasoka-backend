@@ -127,6 +127,33 @@ router.patch('/mark-all-read', authMiddleware, async (req, res) => {
   }
 });
 
+// Track notification click
+router.post('/:id/click', authMiddleware, async (req, res) => {
+  try {
+    const notificationId = req.params.id;
+    
+    const userNotification = await prisma.userNotification.update({
+      where: {
+        userId_notificationId: {
+          userId: req.user.id,
+          notificationId
+        }
+      },
+      data: {
+        clicked: true,
+        clickedAt: new Date(),
+        isRead: true,
+        readAt: new Date()
+      }
+    });
+
+    res.json({ userNotification });
+  } catch (error) {
+    logger.error('Error tracking notification click:', error);
+    res.status(500).json({ error: 'Failed to track notification click' });
+  }
+});
+
 // Delete notification for user
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
@@ -181,7 +208,7 @@ router.get('/unread-count', authMiddleware, async (req, res) => {
   }
 });
 
-// Admin: Get all notifications
+// Admin: Get all notifications with analytics
 router.get('/admin/all', authMiddleware, adminOnly, async (req, res) => {
   try {
     const { page = 1, limit = 20, type } = req.query;
@@ -197,18 +224,42 @@ router.get('/admin/all', authMiddleware, adminOnly, async (req, res) => {
       skip,
       take: parseInt(limit),
       include: {
-        _count: {
+        userNotifications: {
           select: {
-            userNotifications: true
+            isRead: true,
+            clicked: true,
+            deliveredAt: true,
+            clickedAt: true
           }
         }
       }
     });
 
+    // Calculate analytics for each notification
+    const notificationsWithAnalytics = notifications.map(notif => {
+      const totalSent = notif.userNotifications.length;
+      const delivered = notif.userNotifications.filter(un => un.deliveredAt).length;
+      const read = notif.userNotifications.filter(un => un.isRead).length;
+      const clicked = notif.userNotifications.filter(un => un.clicked).length;
+      
+      return {
+        ...notif,
+        analytics: {
+          totalSent,
+          delivered,
+          read,
+          clicked,
+          deliveryRate: totalSent > 0 ? ((delivered / totalSent) * 100).toFixed(1) : 0,
+          readRate: totalSent > 0 ? ((read / totalSent) * 100).toFixed(1) : 0,
+          clickRate: totalSent > 0 ? ((clicked / totalSent) * 100).toFixed(1) : 0
+        }
+      };
+    });
+
     const total = await prisma.notification.count({ where });
 
     res.json({
-      notifications,
+      notifications: notificationsWithAnalytics,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
