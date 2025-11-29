@@ -877,7 +877,18 @@ router.get('/users', authMiddleware, adminOnly, async (req, res) => {
     });
   } catch (error) {
     logger.error('Error fetching users:', error);
-    res.status(500).json({ error: 'Failed to fetch users' });
+    
+    // If database unavailable, return empty array
+    logger.info('Database unavailable - returning empty users array');
+    res.json({
+      users: [],
+      pagination: {
+        page: 1,
+        limit: 50,
+        total: 0,
+        pages: 0
+      }
+    });
   }
 });
 

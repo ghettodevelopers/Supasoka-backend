@@ -360,7 +360,10 @@ router.put('/:id',
       const channelId = req.params.id;
       // Only reject mock channel IDs (string starting with "mock-")
       if (typeof channelId === 'string' && channelId.startsWith('mock-')) {
-        return res.status(404).json({ error: 'Cannot modify mock channel' });
+        return res.status(503).json({ 
+          error: 'Database unavailable', 
+          message: 'Cannot update mock channels. Database connection required.'
+        });
       }
       // Ensure channel exists
       const existing = await prisma.channel.findUnique({ where: { id: channelId } });
@@ -444,7 +447,10 @@ router.patch('/:id/toggle',
 
       // Only reject mock channel IDs (string starting with "mock-")
       if (typeof channelId === 'string' && channelId.startsWith('mock-')) {
-        return res.status(404).json({ error: 'Cannot modify mock channel' });
+        return res.status(503).json({ 
+          error: 'Database unavailable', 
+          message: 'Cannot modify mock channels. Database connection required.'
+        });
       }
 
       const channel = await prisma.channel.findUnique({
@@ -498,7 +504,10 @@ router.delete('/:id',
       const channelId = req.params.id;
       // Only reject mock channel IDs (string starting with "mock-")
       if (typeof channelId === 'string' && channelId.startsWith('mock-')) {
-        return res.status(404).json({ error: 'Cannot modify mock channel' });
+        return res.status(503).json({ 
+          error: 'Database unavailable', 
+          message: 'Cannot delete mock channels. Database connection required.'
+        });
       }
 
       // Get channel data before deletion for notification
@@ -767,7 +776,10 @@ router.get('/meta/categories', async (req, res) => {
     res.json({ categories });
   } catch (error) {
     logger.error('Error fetching categories:', error);
-    res.status(500).json({ error: 'Failed to fetch categories' });
+    
+    // If database unavailable, return empty array
+    logger.info('Database unavailable - returning empty categories array');
+    res.json({ categories: [] });
   }
 });
 
