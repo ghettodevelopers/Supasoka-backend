@@ -20,6 +20,7 @@ const analyticsRoutes = require('./routes/analytics');
 const notificationRoutes = require('./routes/notifications');
 const adminRoutes = require('./routes/admin');
 const streamingRoutes = require('./routes/streaming');
+const settingsRoutes = require('./routes/settings');
 
 // Import middleware
 const { authMiddleware } = require('./middleware/auth');
@@ -163,6 +164,7 @@ app.use('/api/analytics', authMiddleware, analyticsRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/streaming', streamingRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Socket.IO for real-time updates
 io.on('connection', (socket) => {
