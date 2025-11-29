@@ -250,11 +250,11 @@ router.post('/',
         name: name.trim(),
         logo: logo?.trim() || null,
         category,
-        color: Array.isArray(color) && color.length > 0 ? color : ['#6366F1', '#8B5CF6'],
+        color: JSON.stringify(Array.isArray(color) && color.length > 0 ? color : ['#6366F1', '#8B5CF6']),
         hd: Boolean(hd),
         streamUrl: streamUrl.trim(),
-        backupUrls: Array.isArray(backupUrls) ? backupUrls : [],
-        drmConfig: drmConfig || null,
+        backupUrls: JSON.stringify(Array.isArray(backupUrls) ? backupUrls : []),
+        drmConfig: drmConfig ? JSON.stringify(drmConfig) : null,
         priority: numericPriority,
         description: description?.trim() || null,
         isFree: Boolean(isFree)
@@ -378,11 +378,11 @@ router.put('/:id',
       if (payload.name !== undefined) updates.name = payload.name;
       if (payload.logo !== undefined) updates.logo = payload.logo;
       if (payload.category !== undefined) updates.category = payload.category;
-      if (payload.color !== undefined) updates.color = Array.isArray(payload.color) ? payload.color : [];
+      if (payload.color !== undefined) updates.color = JSON.stringify(Array.isArray(payload.color) ? payload.color : []);
       if (payload.hd !== undefined) updates.hd = Boolean(payload.hd);
       if (payload.streamUrl !== undefined) updates.streamUrl = payload.streamUrl;
-      if (payload.backupUrls !== undefined) updates.backupUrls = Array.isArray(payload.backupUrls) ? payload.backupUrls : [];
-      if (payload.drmConfig !== undefined) updates.drmConfig = payload.drmConfig || null;
+      if (payload.backupUrls !== undefined) updates.backupUrls = JSON.stringify(Array.isArray(payload.backupUrls) ? payload.backupUrls : []);
+      if (payload.drmConfig !== undefined) updates.drmConfig = payload.drmConfig ? JSON.stringify(payload.drmConfig) : null;
       if (payload.priority !== undefined) {
         const p = Number(payload.priority);
         if (Number.isFinite(p)) updates.priority = p;
