@@ -25,6 +25,7 @@ const DashboardScreen = () => {
   const [stats, setStats] = useState(null);
   const [liveChannels, setLiveChannels] = useState([]);
   const [recentActivity, setRecentActivity] = useState([]);
+  const [freeChannels, setFreeChannels] = useState([]);
 
   // Custom modal states
   const [customModal, setCustomModal] = useState({
@@ -36,7 +37,12 @@ const DashboardScreen = () => {
   });
 
   useEffect(() => {
-    loadDashboardData();
+    // Delay to ensure token is fully set and login flag is still active
+    const timer = setTimeout(() => {
+      loadDashboardData();
+    }, 500);
+    
+    return () => clearTimeout(timer);
   }, []);
 
   const loadDashboardData = async () => {
@@ -46,6 +52,10 @@ const DashboardScreen = () => {
       setStats(response.data.stats);
       setLiveChannels(response.data.liveChannels || []);
       setRecentActivity(response.data.recentActivity || []);
+      
+      // Load free channels
+      const freeChannelsResponse = await api.get('/channels/free');
+      setFreeChannels(freeChannelsResponse.data.channels || []);
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
       
@@ -95,12 +105,8 @@ const DashboardScreen = () => {
 
   const handleQuickAction = (actionId) => {
     switch (actionId) {
-      case 1: // Start Stream
-        showCustomModal({
-          type: 'info',
-          title: 'Coming Soon! 🚀',
-          message: 'Live streaming feature is coming soon.',
-        });
+      case 1: // Free Channels
+        navigation.navigate('Channels', { filterFree: true });
         break;
       case 2: // Manage Channels
         navigation.navigate('Channels');
@@ -148,8 +154,33 @@ const DashboardScreen = () => {
     }
   };
 
+  const handleToggleFreeStatus = async (channelId) => {
+    try {
+      const response = await api.patch(`/channels/${channelId}/toggle-free`);
+      
+      // Update local free channels list
+      setFreeChannels(prev => prev.filter(ch => ch.id !== channelId));
+      
+      showCustomModal({
+        type: 'success',
+        title: '✅ Success',
+        message: `Channel is now ${response.data.channel.isFree ? 'FREE' : 'PREMIUM'}`,
+      });
+      
+      // Reload dashboard data
+      await loadDashboardData();
+    } catch (error) {
+      console.error('Failed to toggle free status:', error);
+      showCustomModal({
+        type: 'error',
+        title: '❌ Error',
+        message: 'Failed to update channel status. Please try again.',
+      });
+    }
+  };
+
   const quickActions = [
-    { id: 1, title: 'Start Stream', icon: 'play-circle', color: '#FF6B6B' },
+    { id: 1, title: 'Free Channels', icon: 'gift', color: '#10B981' },
     { id: 2, title: 'Manage Channels', icon: 'tv', color: '#4ECDC4' },
     { id: 3, title: 'View Analytics', icon: 'stats-chart', color: '#A78BFA' },
     { id: 4, title: 'Send Alert', icon: 'notifications', color: '#FCD34D' },
@@ -258,6 +289,80 @@ const DashboardScreen = () => {
               </TouchableOpacity>
             ))}
           </View>
+        </View>
+
+        {/* Free Channels Management */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>🎁 Free Channels</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Channels', { filterFree: true })}>
+              <Text style={styles.seeAll}>Manage All</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {freeChannels.length > 0 ? (
+            freeChannels.slice(0, 3).map((channel) => (
+              <View 
+                key={channel.id} 
+                style={styles.freeChannelCard}
+              >
+                {channel.logo ? (
+                  <Image source={{ uri: channel.logo }} style={styles.freeChannelThumbnail} />
+                ) : (
+                  <View style={[styles.freeChannelThumbnail, styles.freeChannelThumbnailPlaceholder]}>
+                    <MaterialCommunityIcons name="television" size={28} color="#10B981" />
+                  </View>
+                )}
+                <View style={styles.freeChannelInfo}>
+                  <View style={styles.freeChannelHeader}>
+                    <Text style={styles.freeChannelTitle}>{channel.name}</Text>
+                    <View style={styles.freeBadge}>
+                      <Ionicons name="gift" size={12} color="#10B981" />
+                      <Text style={styles.freeBadgeText}>FREE</Text>
+                    </View>
+                  </View>
+                  <View style={styles.freeChannelMeta}>
+                    <View style={styles.categoryBadge}>
+                      <Text style={styles.categoryText}>{channel.category}</Text>
+                    </View>
+                    {channel.isActive && (
+                      <View style={styles.activeIndicator}>
+                        <View style={styles.activeDot} />
+                        <Text style={styles.activeText}>Active</Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.freeChannelActions}>
+                    <TouchableOpacity 
+                      style={styles.actionBtn}
+                      onPress={() => navigation.navigate('Channels', { editChannel: channel.id })}
+                    >
+                      <Ionicons name="create-outline" size={16} color="#6366F1" />
+                      <Text style={styles.actionBtnText}>Edit</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={styles.actionBtn}
+                      onPress={() => handleToggleFreeStatus(channel.id)}
+                    >
+                      <Ionicons name="lock-closed-outline" size={16} color="#F59E0B" />
+                      <Text style={styles.actionBtnText}>Make Premium</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            ))
+          ) : (
+            <View style={styles.emptyState}>
+              <Ionicons name="gift-outline" size={48} color="#64748B" />
+              <Text style={styles.emptyText}>No free channels available</Text>
+              <TouchableOpacity 
+                style={styles.addButton}
+                onPress={() => navigation.navigate('Channels')}
+              >
+                <Text style={styles.addButtonText}>Add Free Channel</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* Live Channels */}
@@ -634,6 +739,117 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 12,
     textAlign: 'center',
+  },
+  addButton: {
+    marginTop: 16,
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  addButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  freeChannelCard: {
+    flexDirection: 'row',
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#10B981',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  freeChannelThumbnail: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    marginRight: 12,
+  },
+  freeChannelThumbnailPlaceholder: {
+    backgroundColor: '#10B98120',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  freeChannelInfo: {
+    flex: 1,
+  },
+  freeChannelHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  freeChannelTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#F1F5F9',
+    flex: 1,
+    marginRight: 8,
+  },
+  freeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10B98120',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 4,
+  },
+  freeBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#10B981',
+  },
+  freeChannelMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  activeIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  activeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+    marginRight: 4,
+  },
+  activeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#10B981',
+  },
+  freeChannelActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#334155',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    gap: 4,
+  },
+  actionBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#F1F5F9',
   },
 });
 
