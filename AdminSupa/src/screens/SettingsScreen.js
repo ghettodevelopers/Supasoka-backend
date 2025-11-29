@@ -36,7 +36,7 @@ const SettingsScreen = () => {
   const [appInfo] = useState({
     version: '1.0.0',
     buildNumber: '1',
-    platform: 'Android/iOS',
+    platform: 'Android',
   });
 
   // Custom modal states
@@ -280,10 +280,10 @@ const SettingsScreen = () => {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Ionicons name="call" size={24} color="#10B981" />
-            <Text style={styles.sectionTitle}>Contact Information</Text>
+            <Text style={styles.sectionTitle}>Mawasiliano</Text>
           </View>
           <Text style={styles.sectionDescription}>
-            Contact details displayed in the user app
+            Mtumiaji atawasiliana nami kwa namba na Email zifuatazaz
           </Text>
 
           <View style={styles.inputGroup}>
@@ -330,7 +330,7 @@ const SettingsScreen = () => {
                 onChangeText={(text) =>
                   setContactSettings({ ...contactSettings, supportEmail: text })
                 }
-                placeholder="ghettodevelopers.com"
+                placeholder="ghettodevelopers@gmail.com"
                 placeholderTextColor="#64748B"
                 keyboardType="email-address"
                 autoCapitalize="none"

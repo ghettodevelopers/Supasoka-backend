@@ -756,21 +756,77 @@ router.get('/contact-settings', async (req, res) => {
   }
 });
 
+// Initialize contact settings (create table if not exists)
+router.post('/contact-settings/initialize',
+  authMiddleware,
+  adminOnly,
+  async (req, res) => {
+    try {
+      // Check if settings already exist
+      const existing = await prisma.contactSettings.findFirst({
+        where: { isActive: true }
+      });
+
+      if (existing) {
+        return res.json({ 
+          message: 'Contact settings already initialized',
+          contactSettings: existing 
+        });
+      }
+
+      // Create default settings
+      const contactSettings = await prisma.contactSettings.create({
+        data: {
+          whatsappNumber: '+255 XXX XXX XXX',
+          callNumber: '+255 XXX XXX XXX',
+          supportEmail: 'support@supasoka.com',
+          isActive: true,
+          updatedBy: req.admin?.email || 'system'
+        }
+      });
+
+      logger.info('Contact settings initialized successfully');
+      res.json({ 
+        message: 'Contact settings initialized successfully',
+        contactSettings 
+      });
+    } catch (error) {
+      logger.error('Error initializing contact settings:', error);
+      res.status(500).json({ 
+        error: 'Failed to initialize contact settings',
+        details: error.message 
+      });
+    }
+  }
+);
+
 // Update contact settings
 router.put('/contact-settings',
   authMiddleware,
   adminOnly,
   [
-    body('whatsappNumber').optional().isString(),
-    body('callNumber').optional().isString(),
-    body('supportEmail').optional().isEmail()
+    body('whatsappNumber').optional().isString().withMessage('WhatsApp number must be a string'),
+    body('callNumber').optional().isString().withMessage('Call number must be a string'),
+    body('supportEmail').optional().isEmail().withMessage('Invalid email format')
   ],
   async (req, res) => {
     try {
+      // Validate request
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ 
+          error: 'Validation failed', 
+          details: errors.array() 
+        });
+      }
+
       const { whatsappNumber, callNumber, supportEmail } = req.body;
 
       // Get admin email safely
       const adminEmail = req.admin?.email || req.user?.email || 'admin';
+
+      logger.info(`Updating contact settings by ${adminEmail}`);
+      logger.info(`Data: ${JSON.stringify({ whatsappNumber, callNumber, supportEmail })}`);
 
       // Find existing settings or create new
       let contactSettings = await prisma.contactSettings.findFirst({
@@ -785,11 +841,13 @@ router.put('/contact-settings',
       };
 
       if (contactSettings) {
+        logger.info(`Updating existing contact settings with ID: ${contactSettings.id}`);
         contactSettings = await prisma.contactSettings.update({
           where: { id: contactSettings.id },
           data: updateData
         });
       } else {
+        logger.info('Creating new contact settings');
         contactSettings = await prisma.contactSettings.create({
           data: {
             ...updateData,
@@ -803,16 +861,35 @@ router.put('/contact-settings',
       if (io) {
         io.to('admin-room').emit('contact-settings-updated', { contactSettings });
         io.emit('settings-updated', { type: 'contact', contactSettings });
+        logger.info('Settings update broadcasted via Socket.IO');
       }
 
-      logger.info(`Contact settings updated by ${adminEmail}`);
+      logger.info(`Contact settings updated successfully by ${adminEmail}`);
       res.json({ contactSettings });
     } catch (error) {
       logger.error('Error updating contact settings:', error);
-      logger.error('Error details:', error.message);
+      logger.error('Error stack:', error.stack);
+      logger.error('Error code:', error.code);
+      
+      // Check for specific Prisma errors
+      if (error.code === 'P2002') {
+        return res.status(409).json({ 
+          error: 'Contact settings already exist',
+          details: 'Duplicate entry detected' 
+        });
+      }
+      
+      if (error.code === 'P2025') {
+        return res.status(404).json({ 
+          error: 'Contact settings not found',
+          details: 'The settings record does not exist' 
+        });
+      }
+
       res.status(500).json({ 
         error: 'Failed to update contact settings',
-        details: error.message 
+        details: error.message,
+        code: error.code || 'UNKNOWN'
       });
     }
   }
