@@ -627,6 +627,16 @@ router.delete('/:id',
   }
 );
 
+// TEST ENDPOINT - Verify deployment
+router.get('/test-deployment', (req, res) => {
+  res.json({ 
+    status: 'OK',
+    message: 'Carousel routes are loaded!',
+    timestamp: new Date().toISOString(),
+    version: 'v2-with-carousel'
+  });
+});
+
 // Get carousel images (public endpoint)
 router.get('/carousel', async (req, res) => {
   try {
