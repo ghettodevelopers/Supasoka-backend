@@ -192,6 +192,85 @@ router.get('/free', async (req, res) => {
   }
 });
 
+// TEST ENDPOINT - Verify deployment (MUST be before /:id route)
+router.get('/test-deployment', (req, res) => {
+  res.json({ 
+    status: 'OK',
+    message: 'Carousel routes are loaded!',
+    timestamp: new Date().toISOString(),
+    version: 'v3-routes-fixed'
+  });
+});
+
+// Get carousel images (public endpoint) - MUST be before /:id route
+router.get('/carousel', async (req, res) => {
+  try {
+    logger.info('📸 Fetching carousel images (public endpoint)...');
+    
+    const images = await prisma.carouselImage.findMany({
+      where: { isActive: true },
+      orderBy: { order: 'asc' }
+    });
+
+    logger.info(`✅ Found ${images.length} active carousel images`);
+    images.forEach((img, index) => {
+      logger.info(`   ${index + 1}. ${img.title} - ${img.imageUrl} (active: ${img.isActive})`);
+    });
+
+    res.json({ images });
+  } catch (error) {
+    logger.error('❌ Error fetching carousel images:', error.message);
+    logger.error('   Stack:', error.stack);
+    res.json({ images: [] });
+  }
+});
+
+// Alternative carousel endpoint (no auth required) - MUST be before /:id route
+router.get('/carousel-images', async (req, res) => {
+  try {
+    logger.info('📸 Fetching carousel images (alternative endpoint)...');
+    
+    const images = await prisma.carouselImage.findMany({
+      where: { isActive: true },
+      orderBy: { order: 'asc' }
+    });
+
+    logger.info(`✅ Found ${images.length} active carousel images`);
+    
+    res.json({ 
+      success: true,
+      count: images.length,
+      images 
+    });
+  } catch (error) {
+    logger.error('❌ Error fetching carousel images:', error.message);
+    res.status(500).json({ 
+      success: false,
+      count: 0,
+      images: [],
+      error: error.message 
+    });
+  }
+});
+
+// Admin: Get all carousel images (including inactive) - MUST be before /:id route
+router.get('/carousel/admin', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const images = await prisma.carouselImage.findMany({
+      orderBy: { order: 'asc' }
+    });
+
+    logger.info(`Admin fetched ${images.length} carousel images`);
+    res.json({ images });
+  } catch (error) {
+    logger.error('Error fetching admin carousel images:', error.message);
+    
+    // If database unavailable, return empty array
+    logger.info('Database error - returning empty carousel array');
+    res.json({ images: [] });
+  }
+});
+
 // Get single channel
 router.get('/:id', async (req, res) => {
   try {
@@ -627,84 +706,7 @@ router.delete('/:id',
   }
 );
 
-// TEST ENDPOINT - Verify deployment
-router.get('/test-deployment', (req, res) => {
-  res.json({ 
-    status: 'OK',
-    message: 'Carousel routes are loaded!',
-    timestamp: new Date().toISOString(),
-    version: 'v2-with-carousel'
-  });
-});
-
-// Get carousel images (public endpoint)
-router.get('/carousel', async (req, res) => {
-  try {
-    logger.info('📸 Fetching carousel images (public endpoint)...');
-    
-    const images = await prisma.carouselImage.findMany({
-      where: { isActive: true },
-      orderBy: { order: 'asc' }
-    });
-
-    logger.info(`✅ Found ${images.length} active carousel images`);
-    images.forEach((img, index) => {
-      logger.info(`   ${index + 1}. ${img.title} - ${img.imageUrl} (active: ${img.isActive})`);
-    });
-
-    res.json({ images });
-  } catch (error) {
-    logger.error('❌ Error fetching carousel images:', error.message);
-    logger.error('   Stack:', error.stack);
-    res.json({ images: [] });
-  }
-});
-
-// Alternative carousel endpoint (no auth required) - for production use
-router.get('/carousel-images', async (req, res) => {
-  try {
-    logger.info('📸 Fetching carousel images (alternative endpoint)...');
-    
-    const images = await prisma.carouselImage.findMany({
-      where: { isActive: true },
-      orderBy: { order: 'asc' }
-    });
-
-    logger.info(`✅ Found ${images.length} active carousel images`);
-    
-    res.json({ 
-      success: true,
-      count: images.length,
-      images 
-    });
-  } catch (error) {
-    logger.error('❌ Error fetching carousel images:', error.message);
-    res.status(500).json({ 
-      success: false,
-      count: 0,
-      images: [],
-      error: error.message 
-    });
-  }
-});
-
-// Admin: Get all carousel images (including inactive)
-router.get('/carousel/admin', authMiddleware, adminOnly, async (req, res) => {
-  try {
-    const images = await prisma.carouselImage.findMany({
-      orderBy: { order: 'asc' }
-    });
-
-    logger.info(`Admin fetched ${images.length} carousel images`);
-    res.json({ images });
-  } catch (error) {
-    logger.error('Error fetching admin carousel images:', error.message);
-    
-    // If database unavailable, return empty array
-    logger.info('Database error - returning empty carousel array');
-    res.json({ images: [] });
-  }
-});
+// Carousel routes moved above /:id route to prevent route conflicts
 
 // Admin: Create carousel image
 router.post('/carousel', authMiddleware, adminOnly, async (req, res) => {
