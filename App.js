@@ -7,6 +7,7 @@ import { NotificationProvider } from './contexts/NotificationContext';
 import { ContactProvider } from './contexts/ContactContext';
 import AppNavigator from './navigation/AppNavigator';
 import userService from './services/userService';
+import timeCheckerService from './services/timeCheckerService';
 
 const App = () => {
   const [isInitializing, setIsInitializing] = useState(true);
@@ -14,6 +15,11 @@ const App = () => {
 
   useEffect(() => {
     initializeApp();
+
+    // Cleanup on unmount
+    return () => {
+      timeCheckerService.stopMonitoring();
+    };
   }, []);
 
   const initializeApp = async () => {
@@ -28,6 +34,10 @@ const App = () => {
       } else {
         console.log('👤 Existing user loaded:', user.uniqueUserId);
       }
+
+      // Start time monitoring for access control
+      await timeCheckerService.startMonitoring();
+      console.log('✅ Time monitoring initialized');
       
       setIsInitializing(false);
     } catch (error) {

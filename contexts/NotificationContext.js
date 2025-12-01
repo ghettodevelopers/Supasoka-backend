@@ -244,6 +244,42 @@ export const NotificationProvider = ({ children }) => {
       });
     });
 
+    // Listen for account activation (when admin grants time)
+    socket.on('account-activated', async (data) => {
+      console.log('📡 Account activated:', JSON.stringify(data, null, 2));
+      
+      try {
+        // Update user data in storage
+        const storedUser = await AsyncStorage.getItem('user');
+        if (storedUser) {
+          const user = JSON.parse(storedUser);
+          user.remainingTime = data.remainingTime || 0;
+          user.isActivated = true;
+          user.isSubscribed = true;
+          user.accessLevel = data.accessLevel || 'premium';
+          user.accessExpiresAt = data.expiresAt;
+          await AsyncStorage.setItem('user', JSON.stringify(user));
+          console.log('✅ User data updated with new time:', data.remainingTime);
+        }
+
+        // Update remaining time in AppState
+        const remainingTime = data.remainingTime || 0;
+        await AsyncStorage.setItem('remainingTime', remainingTime.toString());
+        await AsyncStorage.setItem('isSubscribed', 'true');
+        
+        // Show notification
+        showNotification({
+          title: 'Akaunti Imewashwa! 🎉',
+          message: data.message || `Muda wako: ${Math.floor(remainingTime / (24 * 60))} siku`,
+          type: 'admin_activation',
+        });
+
+        console.log('✅ Account activation processed successfully');
+      } catch (error) {
+        console.error('❌ Error processing account activation:', error);
+      }
+    });
+
     socketRef.current = socket;
   };
 
