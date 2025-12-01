@@ -179,19 +179,21 @@ const UserAccount = ({ navigation, route }) => {
         adMobService.loadRewardedAd();
       }
       
-      // Smart countdown that waits for ad
+      // Simple countdown - wait max 10 seconds for ad to load
       let count = 5;
-      let adCheckAttempts = 0;
-      const maxCheckAttempts = 10; // 10 seconds max wait
+      let totalWaitTime = 0;
+      const maxWaitTime = 10; // 10 seconds max wait
       
       const countdownInterval = setInterval(() => {
         // Check if ad is ready
         const currentStatus = adMobService.getAdStatus();
+        totalWaitTime++;
         
         if (currentStatus.isReady) {
-          console.log('✅ Ad loaded during countdown!');
+          console.log('✅ Ad loaded! Showing now...');
           clearInterval(countdownInterval);
           closeCountdownModal();
+          setIsAdLoading(false);
           
           setTimeout(() => {
             showRewardedAd();
@@ -201,31 +203,23 @@ const UserAccount = ({ navigation, route }) => {
         
         // Continue countdown
         count--;
-        setCountdown(count);
-        adCheckAttempts++;
+        setCountdown(Math.max(count, 1)); // Never show 0, minimum 1
         
-        if (count === 0) {
-          // Countdown finished, check if ad is ready
-          if (currentStatus.isReady) {
-            clearInterval(countdownInterval);
-            closeCountdownModal();
-            
-            setTimeout(() => {
-              showRewardedAd();
-            }, 200);
-          } else if (adCheckAttempts >= maxCheckAttempts) {
-            // Max wait time reached, show error
-            console.log('❌ Ad failed to load in time');
-            clearInterval(countdownInterval);
-            closeCountdownModal();
-            setIsAdLoading(false);
-            showErrorModal('Tangazo halipatikani kwa sasa. Tafadhali jaribu tena.');
-          } else {
-            // Keep waiting, reset countdown
-            console.log('⏳ Still waiting for ad... extending countdown');
-            count = 3; // Give it 3 more seconds
-            setCountdown(count);
-          }
+        // Check if max wait time reached
+        if (totalWaitTime >= maxWaitTime) {
+          console.log('❌ Ad failed to load in time');
+          clearInterval(countdownInterval);
+          closeCountdownModal();
+          setIsAdLoading(false);
+          showErrorModal('Tangazo halipatikani kwa sasa. Tafadhali jaribu tena baadaye.');
+          return;
+        }
+        
+        // If countdown reaches 1, keep it at 1 while waiting
+        if (count <= 0) {
+          count = 1;
+          setCountdown(1);
+          console.log(`⏳ Still loading ad... (${totalWaitTime}/${maxWaitTime}s)`);
         }
       }, 1000);
       

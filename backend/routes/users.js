@@ -515,7 +515,7 @@ router.patch('/admin/:uniqueUserId/activate', authMiddleware, adminOnly, async (
 });
 
 // Admin: Block/Unblock user
-router.patch('/admin/:uniqueUserId/block', adminOnly, async (req, res) => {
+router.patch('/admin/:uniqueUserId/block', authMiddleware, adminOnly, async (req, res) => {
   try {
     const { uniqueUserId } = req.params;
     const { isBlocked, blockReason } = req.body;
@@ -525,12 +525,12 @@ router.patch('/admin/:uniqueUserId/block', adminOnly, async (req, res) => {
       data: {
         isBlocked,
         blockedAt: isBlocked ? new Date() : null,
-        blockedBy: isBlocked ? req.user.id : null,
+        blockedBy: isBlocked ? req.admin.email : null, // Fixed: use req.admin.email
         blockReason: isBlocked ? blockReason : null
       }
     });
 
-    logger.info(`User ${isBlocked ? 'blocked' : 'unblocked'} by admin: ${user.uniqueUserId}`);
+    logger.info(`User ${isBlocked ? 'blocked' : 'unblocked'} by admin: ${user.uniqueUserId} (by ${req.admin.email})`);
     res.json({ 
       user, 
       message: `User ${isBlocked ? 'blocked' : 'unblocked'} successfully`
