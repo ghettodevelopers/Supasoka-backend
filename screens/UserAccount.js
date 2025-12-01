@@ -89,40 +89,32 @@ const UserAccount = ({ navigation, route }) => {
     return () => clearInterval(interval);
   }, [remainingTime, isSubscribed]);
 
-  const generateUsername = () => {
-    const randomNum = Math.floor(Math.random() * 9999) + 1;
-    return `user_u${randomNum}`;
-  };
-
   const initializeUser = async () => {
     try {
-      let storedUsername = await AsyncStorage.getItem('username');
+      // Get user data from storage (contains uniqueUserId from backend)
+      const storedUser = await AsyncStorage.getItem('user');
       
-      if (!storedUsername) {
-        // Generate new username
-        storedUsername = generateUsername();
-        await AsyncStorage.setItem('username', storedUsername);
+      if (storedUser) {
+        const userData = JSON.parse(storedUser);
         
-        // Notify admin about new user
-        try {
-          await apiService.post('/admin/user-joined', {
-            username: storedUsername,
-            joinedAt: new Date().toISOString(),
-          });
-        } catch (error) {
-          console.log('Failed to notify admin:', error);
+        // Use uniqueUserId from backend as the username
+        if (userData.uniqueUserId) {
+          setUsername(userData.uniqueUserId);
+          console.log('✅ Username loaded from backend:', userData.uniqueUserId);
+        } else {
+          // Fallback: generate username if not available
+          const fallbackUsername = `User_${Math.random().toString(36).substr(2, 6)}`;
+          setUsername(fallbackUsername);
+          console.log('⚠️ Using fallback username:', fallbackUsername);
         }
-      }
-      
-      setUsername(storedUsername);
-      
-      // Update user context if needed
-      if (!user?.username) {
-        await updateUser({ ...user, username: storedUsername });
+      } else {
+        // No user data yet, show loading
+        setUsername('User_loading...');
+        console.log('⏳ Waiting for user data...');
       }
     } catch (error) {
       console.error('Error initializing user:', error);
-      setUsername(generateUsername());
+      setUsername(`User_${Math.random().toString(36).substr(2, 6)}`);
     } finally {
       setIsLoadingUser(false);
     }
