@@ -4,9 +4,13 @@ class ContactService {
   async getContactSettings() {
     try {
       const response = await apiService.get('/admin/contact-settings/public');
-      return this.formatContactSettings(response);
+      console.log('📞 Contact settings response:', response);
+      
+      // Backend returns { contactSettings: {...} }
+      const settings = response?.contactSettings || response;
+      return this.formatContactSettings(settings);
     } catch (error) {
-      console.error('Error fetching contact settings:', error);
+      console.error('❌ Error fetching contact settings:', error);
       return null;
     }
   }

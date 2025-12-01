@@ -119,7 +119,7 @@ router.post('/subscribe',
             title: 'Malipo Yamekamilika!',
             message: `Umefanikiwa kulipa kwa huduma za Supasoka. Muda wako: ${Math.floor(remainingTime / (24 * 60))} siku.`,
             type: 'subscription',
-            targetUsers: [req.user.id],
+            targetUsers: JSON.stringify([req.user.id]),
             sentAt: new Date()
           }
         });
@@ -467,15 +467,31 @@ router.patch('/admin/:uniqueUserId/activate', authMiddleware, adminOnly, async (
     });
 
     // Create system notification
-    await prisma.notification.create({
-      data: {
-        title: 'Akaunti Imewashwa! 🎉',
-        message: `Akaunti yako imewashwa na msimamizi. Muda wako: ${timeDisplay}. Furahia kutazama!`,
-        type: 'admin_activation',
-        targetUsers: [user.id],
-        sentAt: new Date()
-      }
-    });
+    try {
+      const notification = await prisma.notification.create({
+        data: {
+          title: 'Akaunti Imewashwa! 🎉',
+          message: `Akaunti yako imewashwa na msimamizi. Muda wako: ${timeDisplay}. Furahia kutazama!`,
+          type: 'admin_activation',
+          targetUsers: JSON.stringify([user.id]), // Convert array to JSON string
+          sentAt: new Date()
+        }
+      });
+      
+      // Create UserNotification record for the user
+      await prisma.userNotification.create({
+        data: {
+          userId: user.id,
+          notificationId: notification.id,
+          deliveredAt: new Date()
+        }
+      });
+      
+      logger.info(`✅ Notification created for user activation: ${user.uniqueUserId}`);
+    } catch (notifError) {
+      logger.error('Error creating notification:', notifError);
+      // Don't fail the whole activation if notification fails
+    }
 
     logger.info(`✅ User activated by admin: ${user.uniqueUserId} - ${finalTimeInMinutes} minutes (${timeDisplay}) by ${req.admin.email}`);
     res.json({ 
@@ -1093,10 +1109,10 @@ async function processSuccessfulPayment(paymentRequest, io) {
     // Create success notification
     await prisma.notification.create({
       data: {
-        title: 'Malipo Yamekamilika! 🎉',
+        title: 'Malipo Yamekamilika! ',
         message: `Umefanikiwa kulipa ${amount.toLocaleString()} TZS. Muda wako: ${Math.floor(timeInMinutes / (24 * 60))} siku. Furahia kutazama!`,
         type: 'payment_success',
-        targetUsers: [user.id],
+        targetUsers: JSON.stringify([user.id]),
         sentAt: new Date()
       }
     });
@@ -1192,10 +1208,10 @@ router.post('/payment/success', async (req, res) => {
     // Create payment success notification
     const notification = await prisma.notification.create({
       data: {
-        title: 'Malipo Yamekamilika! 🎉',
+        title: 'Malipo Yamekamilika! ',
         message: `Umefanikiwa kulipa ${amount.toLocaleString()} TZS kwa huduma za Supasoka. Muda wako: ${Math.floor(timeInMinutes / (24 * 60))} siku. Furahia kutazama!`,
         type: 'payment_success',
-        targetUsers: [req.user.id],
+        targetUsers: JSON.stringify([req.user.id]),
         sentAt: new Date()
       }
     });
@@ -1232,7 +1248,7 @@ router.post('/payment/success', async (req, res) => {
       timestamp: new Date()
     });
 
-    console.log('✅ Payment success notification sent:', {
+    console.log(' Payment success notification sent:', {
       userId: req.user.id,
       transactionId,
       amount,
@@ -1268,162 +1284,6 @@ router.post('/payment/success', async (req, res) => {
   }
 });
 
-// Verify payment status (for polling)
-router.get('/payment/verify/:transactionId', async (req, res) => {
-  try {
-    const { transactionId } = req.params;
-    
-    // Check if user has been updated with this transaction
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id }
-    });
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    // Check if user has active subscription (indicating successful payment)
-    const hasActiveSubscription = user.isSubscribed && 
-                                 user.isActivated && 
-                                 user.remainingTime > 0;
-
-    res.json({
-      verified: hasActiveSubscription,
-      user,
-      subscription: {
-        isActive: hasActiveSubscription,
-        remainingTime: user.remainingTime,
-        expiresAt: user.subscriptionEnd,
-        type: user.subscriptionType
-      }
-    });
-  } catch (error) {
-    logger.error('Error verifying payment:', error);
-    res.status(500).json({ error: 'Failed to verify payment' });
-  }
-});
-
-// Check user access to content (Enhanced with free trial)
-router.get('/access/check', async (req, res) => {
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id }
-    });
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    // Get free trial settings (Enhanced with seconds)
-    const freeTrialSetting = await prisma.appSettings.findUnique({
-      where: { key: 'free_trial_seconds' }
-    });
-    const freeTrialSeconds = freeTrialSetting ? parseInt(freeTrialSetting.value) : 15; // Default 15 seconds
-
-    // Check subscription access
-    const hasSubscriptionAccess = user.isActivated && 
-                                  user.isSubscribed && 
-                                  user.remainingTime > 0;
-
-    // Check points access (150 points = 1 view)
-    const hasPointsAccess = user.points >= 150;
-
-    // Check free trial eligibility
-    const canUseFreeTrialAccess = !user.trialUsed && !hasSubscriptionAccess;
-
-    res.json({
-      user,
-      access: {
-        subscription: {
-          hasAccess: hasSubscriptionAccess,
-          remainingTime: user.remainingTime,
-          expiresAt: user.subscriptionEnd,
-          type: user.subscriptionType
-        },
-        points: {
-          hasAccess: hasPointsAccess,
-          currentPoints: user.points,
-          requiredPoints: 150
-        },
-        freeTrial: {
-          canUse: canUseFreeTrialAccess,
-          durationSeconds: freeTrialSeconds,
-          durationMinutes: Math.floor(freeTrialSeconds / 60),
-          alreadyUsed: user.trialUsed
-        },
-        canAccess: hasSubscriptionAccess || hasPointsAccess || canUseFreeTrialAccess
-      }
-    });
-  } catch (error) {
-    logger.error('Error checking access:', error);
-    res.status(500).json({ error: 'Failed to check access' });
-  }
-});
-
-// Start free trial for new users
-router.post('/trial/start', async (req, res) => {
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id }
-    });
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    if (user.trialUsed) {
-      return res.status(400).json({ error: 'Free trial already used' });
-    }
-
-    if (user.isSubscribed && user.remainingTime > 0) {
-      return res.status(400).json({ error: 'User already has active subscription' });
-    }
-
-    // Get free trial duration (Enhanced with seconds)
-    const freeTrialSetting = await prisma.appSettings.findUnique({
-      where: { key: 'free_trial_seconds' }
-    });
-    const freeTrialSeconds = freeTrialSetting ? parseInt(freeTrialSetting.value) : 15; // Default 15 seconds
-
-    // Start free trial
-    const updatedUser = await prisma.user.update({
-      where: { id: req.user.id },
-      data: {
-        trialUsed: true,
-        isSubscribed: true,
-        subscriptionType: 'free_trial',
-        subscriptionStart: new Date(),
-        subscriptionEnd: new Date(Date.now() + freeTrialSeconds * 1000),
-        remainingTime: Math.ceil(freeTrialSeconds / 60) // Convert to minutes for compatibility
-      }
-    });
-
-    // Send real-time notification
-    const io = req.app.get('io');
-    io.to(`user-${user.id}`).emit('trial-started', {
-      message: `Muda wa bure umeanza! Una sekunde ${freeTrialSeconds} za kutazama.`,
-      remainingTimeSeconds: freeTrialSeconds,
-      remainingTime: Math.ceil(freeTrialSeconds / 60),
-      expiresAt: updatedUser.subscriptionEnd
-    });
-
-    logger.info(`Free trial started: ${user.deviceId} - ${freeTrialSeconds} seconds`);
-    res.json({
-      user: updatedUser,
-      message: `Free trial started: ${freeTrialSeconds} seconds`,
-      trialDuration: {
-        seconds: freeTrialSeconds,
-        minutes: Math.floor(freeTrialSeconds / 60),
-        days: Math.floor(freeTrialSeconds / (24 * 60 * 60)),
-        hours: Math.floor((freeTrialSeconds % (24 * 60 * 60)) / (60 * 60))
-      }
-    });
-  } catch (error) {
-    logger.error('Error starting free trial:', error);
-    res.status(500).json({ error: 'Failed to start free trial' });
-  }
-});
-
 // Process payment failure
 router.post('/payment/failed', authMiddleware, async (req, res) => {
   try {
@@ -1437,7 +1297,7 @@ router.post('/payment/failed', authMiddleware, async (req, res) => {
       paymentMethod 
     } = req.body;
 
-    console.log('❌ Payment failed:', {
+    console.log(' Payment failed:', {
       userId: req.user.id,
       transactionId,
       errorMessage,
@@ -1447,10 +1307,10 @@ router.post('/payment/failed', authMiddleware, async (req, res) => {
     // Create payment failure notification
     const notification = await prisma.notification.create({
       data: {
-        title: 'Malipo Yameshindikana 😔',
+        title: 'Malipo Yameshindikana ',
         message: `Malipo ya ${amount ? amount.toLocaleString() : 'huduma'} TZS yameshindikana. ${errorMessage || 'Jaribu tena au wasiliana na huduma kwa wateja.'}`,
         type: 'payment_failed',
-        targetUsers: [req.user.id],
+        targetUsers: JSON.stringify([req.user.id]),
         sentAt: new Date()
       }
     });

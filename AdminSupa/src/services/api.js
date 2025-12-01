@@ -4,10 +4,10 @@ import { API_URL } from '../config/api';
 
 // Fallback URLs to try if primary fails
 const FALLBACK_URLS = [
-  'http://10.74.21.98:10000/api', // Your local server (FIRST PRIORITY)
-  'http://localhost:10000/api', // Local development
+  'https://supasoka-backend.onrender.com/api', // Production (FIRST PRIORITY)
+  'http://localhost:10000/api', // Local development fallback
   'http://127.0.0.1:10000/api', // Local loopback
-  'https://supasoka-backend.onrender.com/api', // Production fallback
+  'http://10.0.2.2:10000/api', // Android emulator
 ];
 
 // Start with local development URL for Expo Go

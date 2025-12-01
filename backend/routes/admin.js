@@ -441,75 +441,6 @@ router.put('/free-trial', authMiddleware, adminOnly, async (req, res) => {
   }
 });
 
-// Update admin (super admin only)
-router.put('/:id',
-  authMiddleware,
-  adminOnly,
-  async (req, res) => {
-    try {
-      if (req.admin.role !== 'super_admin') {
-        return res.status(403).json({ error: 'Super admin access required' });
-      }
-
-      const adminId = req.params.id;
-      const { name, email, role, isActive } = req.body;
-
-      const admin = await prisma.admin.update({
-        where: { id: adminId },
-        data: {
-          ...(name && { name }),
-          ...(email && { email }),
-          ...(role && { role }),
-          ...(isActive !== undefined && { isActive })
-        },
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          role: true,
-          isActive: true,
-          createdAt: true
-        }
-      });
-
-      logger.info(`Admin updated: ${admin.email} by ${req.admin.email}`);
-      res.json({ admin });
-    } catch (error) {
-      logger.error('Error updating admin:', error);
-      res.status(500).json({ error: 'Failed to update admin' });
-    }
-  }
-);
-
-// Delete admin (super admin only)
-router.delete('/:id',
-  authMiddleware,
-  adminOnly,
-  async (req, res) => {
-    try {
-      if (req.admin.role !== 'super_admin') {
-        return res.status(403).json({ error: 'Super admin access required' });
-      }
-
-      const adminId = req.params.id;
-      
-      if (adminId === req.admin.id) {
-        return res.status(400).json({ error: 'Cannot delete your own account' });
-      }
-
-      await prisma.admin.delete({
-        where: { id: adminId }
-      });
-
-      logger.info(`Admin deleted: ${adminId} by ${req.admin.email}`);
-      res.json({ message: 'Admin deleted successfully' });
-    } catch (error) {
-      logger.error('Error deleting admin:', error);
-      res.status(500).json({ error: 'Failed to delete admin' });
-    }
-  }
-);
-
 // Get app settings
 router.get('/settings', authMiddleware, adminOnly, async (req, res) => {
   try {
@@ -1918,7 +1849,7 @@ async function processSuccessfulPaymentAdmin(paymentRequest, io) {
         title: 'Malipo Yamekamilika (Admin)! 🎉',
         message: `Malipo yako ya ${amount.toLocaleString()} TZS yamekamilishwa na msimamizi. Muda wako: ${Math.floor(timeInMinutes / (24 * 60))} siku.`,
         type: 'payment_success',
-        targetUsers: [user.id],
+        targetUsers: JSON.stringify([user.id]),
         sentAt: new Date()
       }
     });
@@ -2055,6 +1986,80 @@ router.post('/user-joined', async (req, res) => {
     res.status(500).json({ error: 'Failed to process user join' });
   }
 });
+
+// ============================================
+// IMPORTANT: Parameterized routes MUST be at the end
+// to avoid matching specific routes like /contact-settings
+// ============================================
+
+// Update admin (super admin only)
+router.put('/:id',
+  authMiddleware,
+  adminOnly,
+  async (req, res) => {
+    try {
+      if (req.admin.role !== 'super_admin') {
+        return res.status(403).json({ error: 'Super admin access required' });
+      }
+
+      const adminId = req.params.id;
+      const { name, email, role, isActive } = req.body;
+
+      const admin = await prisma.admin.update({
+        where: { id: adminId },
+        data: {
+          ...(name && { name }),
+          ...(email && { email }),
+          ...(role && { role }),
+          ...(isActive !== undefined && { isActive })
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          isActive: true,
+          createdAt: true
+        }
+      });
+
+      logger.info(`Admin updated: ${admin.email} by ${req.admin.email}`);
+      res.json({ admin });
+    } catch (error) {
+      logger.error('Error updating admin:', error);
+      res.status(500).json({ error: 'Failed to update admin' });
+    }
+  }
+);
+
+// Delete admin (super admin only)
+router.delete('/:id',
+  authMiddleware,
+  adminOnly,
+  async (req, res) => {
+    try {
+      if (req.admin.role !== 'super_admin') {
+        return res.status(403).json({ error: 'Super admin access required' });
+      }
+
+      const adminId = req.params.id;
+      
+      if (adminId === req.admin.id) {
+        return res.status(400).json({ error: 'Cannot delete your own account' });
+      }
+
+      await prisma.admin.delete({
+        where: { id: adminId }
+      });
+
+      logger.info(`Admin deleted: ${adminId} by ${req.admin.email}`);
+      res.json({ message: 'Admin deleted successfully' });
+    } catch (error) {
+      logger.error('Error deleting admin:', error);
+      res.status(500).json({ error: 'Failed to delete admin' });
+    }
+  }
+);
 
 // Export the router
 module.exports = router;

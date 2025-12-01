@@ -27,10 +27,13 @@ class SettingsService {
   // Get contact settings
   async getContactSettings() {
     try {
+      console.log('📞 Fetching contact settings from:', API_ENDPOINTS.CONTACT_SETTINGS);
       const response = await api.get(API_ENDPOINTS.CONTACT_SETTINGS);
+      console.log('✅ Contact settings fetched:', response.data);
       return response.data;
     } catch (error) {
-      console.error('Error fetching contact settings:', error);
+      console.error('❌ Error fetching contact settings:', error);
+      console.error('❌ Error response:', error.response?.data);
       throw error;
     }
   }
@@ -38,10 +41,16 @@ class SettingsService {
   // Update contact settings
   async updateContactSettings(contactData) {
     try {
+      console.log('📞 Updating contact settings:', contactData);
+      console.log('📍 Endpoint:', API_ENDPOINTS.CONTACT_SETTINGS);
+      
       const response = await api.put(API_ENDPOINTS.CONTACT_SETTINGS, contactData);
+      console.log('✅ Contact settings updated:', response.data);
       return response.data;
     } catch (error) {
-      console.error('Error updating contact settings:', error);
+      console.error('❌ Error updating contact settings:', error);
+      console.error('❌ Error response:', error.response?.data);
+      console.error('❌ Error status:', error.response?.status);
       throw error;
     }
   }

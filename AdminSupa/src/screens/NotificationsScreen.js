@@ -54,9 +54,10 @@ const NotificationsScreen = () => {
     try {
       setLoading(true);
       const data = await notificationService.getAllNotifications(1, 50);
+      console.log('📬 Loaded notifications:', data.notifications?.length || 0);
       setNotifications(data.notifications || []);
     } catch (error) {
-      console.error('Failed to load notifications:', error);
+      console.error('❌ Failed to load notifications:', error);
       showCustomModal({
         type: 'error',
         title: 'Connection Error',
@@ -125,16 +126,51 @@ const NotificationsScreen = () => {
         targetUsers: formData.targetAll ? null : [], // null = all users
       };
 
-      await notificationService.sendNotification(notificationData);
+      const response = await notificationService.sendNotification(notificationData);
+      console.log('✅ Notification sent successfully:', response);
+      
+      // Immediately add the new notification to the list (optimistic update)
+      if (response && response.notification) {
+        const newNotification = {
+          ...response.notification,
+          _count: {
+            userNotifications: response.sentTo || 0
+          },
+          analytics: {
+            totalSent: response.sentTo || 0,
+            delivered: 0,
+            read: 0,
+            clicked: 0,
+            deliveryRate: 0,
+            readRate: 0,
+            clickRate: 0
+          }
+        };
+        
+        console.log('📝 Adding notification to list:', newNotification.title);
+        // Add to the beginning of the list
+        setNotifications(prev => {
+          console.log('📊 Previous notifications count:', prev.length);
+          const updated = [newNotification, ...prev];
+          console.log('📊 Updated notifications count:', updated.length);
+          return updated;
+        });
+      } else {
+        console.warn('⚠️ No notification object in response:', response);
+      }
       
       showCustomModal({
         type: 'success',
         title: 'Notification Sent!',
-        message: `Your notification has been sent to ${formData.targetAll ? 'all users' : 'selected users'}!`,
+        message: `Your notification has been sent to ${response.sentTo || 'all'} users!`,
       });
 
       setModalVisible(false);
-      await loadNotifications();
+      
+      // Reload notifications in background to ensure sync
+      setTimeout(() => {
+        loadNotifications();
+      }, 1000);
     } catch (error) {
       console.error('Send error:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to send notification';

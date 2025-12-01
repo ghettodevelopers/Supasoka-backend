@@ -2,6 +2,7 @@ import React, { createContext, useState, useEffect, useContext, useRef } from 'r
 import { Alert, ToastAndroid, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import io from 'socket.io-client';
+import PushNotification from 'react-native-push-notification';
 
 const NotificationContext = createContext();
 
@@ -21,6 +22,9 @@ export const NotificationProvider = ({ children }) => {
   const currentUrlIndex = useRef(0);
 
   useEffect(() => {
+    // Configure push notifications
+    configurePushNotifications();
+    
     loadNotifications();
     connectSocket();
 
@@ -30,6 +34,44 @@ export const NotificationProvider = ({ children }) => {
       }
     };
   }, []);
+
+  const configurePushNotifications = () => {
+    // Create notification channel for Android
+    PushNotification.createChannel(
+      {
+        channelId: 'supasoka-default',
+        channelName: 'Supasoka Notifications',
+        channelDescription: 'Notifications from Supasoka',
+        playSound: true,
+        soundName: 'default',
+        importance: 4,
+        vibrate: true,
+      },
+      (created) => console.log(`Notification channel created: ${created}`)
+    );
+
+    // Configure push notifications
+    PushNotification.configure({
+      onNotification: function (notification) {
+        console.log('📱 Notification received:', notification);
+        
+        // Handle notification tap
+        if (notification.userInteraction) {
+          console.log('User tapped notification');
+          // You can navigate to notifications screen here if needed
+        }
+      },
+      permissions: {
+        alert: true,
+        badge: true,
+        sound: true,
+      },
+      popInitialNotification: true,
+      requestPermissions: Platform.OS === 'ios',
+    });
+
+    console.log('✅ Push notifications configured');
+  };
 
   const loadNotifications = async () => {
     try {
@@ -138,9 +180,27 @@ export const NotificationProvider = ({ children }) => {
 
     // Listen for immediate notifications from admin
     socket.on('immediate-notification', (data) => {
-      console.log('📡 Immediate notification:', data);
+      console.log('📡 Immediate notification received:', JSON.stringify(data, null, 2));
+      
+      // Map notification types to Swahili titles if not provided
+      const typeToTitle = {
+        'match_started': 'Mechi Imeanza',
+        'goal': 'Goli!',
+        'movie': 'Filamu Mpya',
+        'general': 'Taarifa',
+        'subscription': 'Usajili',
+        'maintenance': 'Matengenezo',
+        'channel_update': 'Vituo Vimebadilishwa',
+        'admin_message': 'Ujumbe wa Msimamizi',
+        'access_granted': 'Ufikiaji Umeidhinishwa',
+        'carousel_update': 'Picha Mpya',
+        'settings_update': 'Mipangilio Imebadilishwa'
+      };
+      
+      const notificationTitle = data.title || typeToTitle[data.type] || 'Taarifa';
+      
       showNotification({
-        title: data.title || 'Taarifa',
+        title: notificationTitle,
         message: data.message || 'Una taarifa mpya',
         type: data.type || 'general',
       });
@@ -148,9 +208,27 @@ export const NotificationProvider = ({ children }) => {
 
     // Listen for new notifications
     socket.on('new-notification', (data) => {
-      console.log('📡 New notification:', data);
+      console.log('📡 New notification received:', JSON.stringify(data, null, 2));
+      
+      // Map notification types to Swahili titles if not provided
+      const typeToTitle = {
+        'match_started': 'Mechi Imeanza',
+        'goal': 'Goli!',
+        'movie': 'Filamu Mpya',
+        'general': 'Taarifa',
+        'subscription': 'Usajili',
+        'maintenance': 'Matengenezo',
+        'channel_update': 'Vituo Vimebadilishwa',
+        'admin_message': 'Ujumbe wa Msimamizi',
+        'access_granted': 'Ufikiaji Umeidhinishwa',
+        'carousel_update': 'Picha Mpya',
+        'settings_update': 'Mipangilio Imebadilishwa'
+      };
+      
+      const notificationTitle = data.title || typeToTitle[data.type] || 'Taarifa';
+      
       showNotification({
-        title: data.title || 'Taarifa',
+        title: notificationTitle,
         message: data.message || 'Una taarifa mpya',
         type: data.type || 'general',
       });
@@ -177,7 +255,31 @@ export const NotificationProvider = ({ children }) => {
       read: false,
     };
 
-    // Show toast
+    // Show status bar notification using PushNotification
+    PushNotification.localNotification({
+      channelId: 'supasoka-default',
+      title: notification.title || 'Supasoka',
+      message: notification.message || 'Una taarifa mpya',
+      playSound: true,
+      soundName: 'default',
+      vibrate: true,
+      vibration: 300,
+      priority: 'high',
+      importance: 'high',
+      autoCancel: true,
+      largeIcon: 'ic_launcher',
+      smallIcon: 'ic_notification',
+      bigText: notification.message,
+      subText: 'Supasoka',
+      color: '#3b82f6',
+      id: parseInt(newNotification.id),
+      userInfo: {
+        notificationId: newNotification.id,
+        type: notification.type,
+      },
+    });
+
+    // Also show toast for immediate feedback
     if (Platform.OS === 'android') {
       ToastAndroid.show(
         `${notification.title}: ${notification.message}`,

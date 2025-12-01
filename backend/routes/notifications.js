@@ -400,7 +400,20 @@ router.post('/admin/send-immediate',
   [
     body('title').notEmpty().withMessage('Title is required'),
     body('message').notEmpty().withMessage('Message is required'),
-    body('type').optional().isIn(['general', 'subscription', 'update', 'maintenance']),
+    body('type').optional().isIn([
+      'general', 
+      'subscription', 
+      'update', 
+      'maintenance',
+      'match_started',  // Sports notifications
+      'goal',           // Goal scored notifications
+      'movie',          // New movie/content notifications
+      'channel_update', // Channel updates
+      'admin_message',  // Admin messages
+      'access_granted', // Access granted
+      'carousel_update',// Carousel updates
+      'settings_update' // Settings updates
+    ]),
     body('targetUsers').optional().custom((value) => {
       if (value === null || value === undefined) return true;
       if (Array.isArray(value)) return true;
@@ -480,16 +493,37 @@ router.post('/admin/send-immediate',
       // Emit to admin dashboard
       io.to('admin-room').emit('notification-created', { notification });
       
-      // Emit to targeted users
-      users.forEach(user => {
-        io.to(`user-${user.id}`).emit('new-notification', {
+      // Emit to targeted users (or all users if no specific targets)
+      if (targetUsers && targetUsers.length > 0) {
+        // Send to specific users
+        users.forEach(user => {
+          io.to(`user-${user.id}`).emit('new-notification', {
+            id: notification.id,
+            title,
+            message,
+            type,
+            createdAt: notification.createdAt
+          });
+        });
+      } else {
+        // Broadcast to all users
+        io.emit('new-notification', {
           id: notification.id,
           title,
           message,
           type,
           createdAt: notification.createdAt
         });
-      });
+        
+        // Also emit as immediate-notification for backward compatibility
+        io.emit('immediate-notification', {
+          id: notification.id,
+          title,
+          message,
+          type,
+          timestamp: notification.createdAt
+        });
+      }
 
       logger.info(`Immediate notification sent: ${title} by admin ${req.admin.email}`);
       res.status(201).json({ notification, sentTo: users.length });

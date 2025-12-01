@@ -129,7 +129,49 @@ const UserAccount = ({ navigation, route }) => {
   };
 
   const handleWatchAd = async () => {
-    // Show countdown modal
+    console.log('🎬 User clicked watch ad button');
+    
+    // Check if ad is already loaded (instant show)
+    const adStatus = adMobService.getAdStatus();
+    console.log('📊 Ad status:', adStatus);
+    
+    if (adStatus.isReady) {
+      console.log('⚡ Ad already loaded! Showing immediately with short countdown...');
+      
+      // Show very short countdown (2 seconds) since ad is ready
+      setCountdown(2);
+      setShowCountdownModal(true);
+      Animated.spring(countdownScaleAnim, {
+        toValue: 1,
+        friction: 5,
+        useNativeDriver: true,
+      }).start();
+      
+      // Quick countdown
+      let count = 2;
+      const countdownInterval = setInterval(() => {
+        count--;
+        setCountdown(count);
+        
+        if (count === 0) {
+          clearInterval(countdownInterval);
+          closeCountdownModal();
+          
+          // Show ad immediately
+          setTimeout(() => {
+            showRewardedAd();
+          }, 200);
+        }
+      }, 1000);
+      
+      return;
+    }
+    
+    // Ad not ready, show loading message and load it
+    console.log('⏳ Ad not ready, loading...');
+    setIsAdLoading(true);
+    
+    // Show countdown modal with loading state
     setCountdown(5);
     setShowCountdownModal(true);
     Animated.spring(countdownScaleAnim, {
@@ -137,50 +179,80 @@ const UserAccount = ({ navigation, route }) => {
       friction: 5,
       useNativeDriver: true,
     }).start();
-
-    // Start loading ad in background
-    setIsAdLoading(true);
     
     try {
-      // Always try to load a fresh ad
-      console.log('🔄 Loading rewarded ad...');
-      await adMobService.loadRewardedAd();
+      // Trigger ad load if not already loading
+      if (!adStatus.isLoading) {
+        console.log('🔄 Starting ad load...');
+        adMobService.loadRewardedAd();
+      }
       
-      // Wait a bit for ad to load
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // Start countdown
+      // Smart countdown that waits for ad
       let count = 5;
+      let adCheckAttempts = 0;
+      const maxCheckAttempts = 10; // 10 seconds max wait
+      
       const countdownInterval = setInterval(() => {
-        count--;
-        setCountdown(count);
+        // Check if ad is ready
+        const currentStatus = adMobService.getAdStatus();
         
-        if (count === 0) {
+        if (currentStatus.isReady) {
+          console.log('✅ Ad loaded during countdown!');
           clearInterval(countdownInterval);
-          // Close countdown modal
           closeCountdownModal();
           
-          // Show the ad
           setTimeout(() => {
             showRewardedAd();
-          }, 300);
+          }, 200);
+          return;
+        }
+        
+        // Continue countdown
+        count--;
+        setCountdown(count);
+        adCheckAttempts++;
+        
+        if (count === 0) {
+          // Countdown finished, check if ad is ready
+          if (currentStatus.isReady) {
+            clearInterval(countdownInterval);
+            closeCountdownModal();
+            
+            setTimeout(() => {
+              showRewardedAd();
+            }, 200);
+          } else if (adCheckAttempts >= maxCheckAttempts) {
+            // Max wait time reached, show error
+            console.log('❌ Ad failed to load in time');
+            clearInterval(countdownInterval);
+            closeCountdownModal();
+            setIsAdLoading(false);
+            showErrorModal('Tangazo halipatikani kwa sasa. Tafadhali jaribu tena.');
+          } else {
+            // Keep waiting, reset countdown
+            console.log('⏳ Still waiting for ad... extending countdown');
+            count = 3; // Give it 3 more seconds
+            setCountdown(count);
+          }
         }
       }, 1000);
       
     } catch (error) {
-      console.error('❌ Error loading ad:', error);
+      console.error('❌ Error in ad flow:', error);
       closeCountdownModal();
       setIsAdLoading(false);
-      showErrorModal('Tangazo halipatikani kwa sasa. Tafadhali jaribu tena baadaye.');
+      showErrorModal('Hitilafu imetokea. Tafadhali jaribu tena.');
     }
   };
 
   const showRewardedAd = async () => {
+    console.log('🎬 Showing rewarded ad...');
+    
     try {
       const success = await adMobService.showRewardedAd(
         async (reward) => {
           // User earned reward
-          console.log('User earned reward:', reward);
+          console.log('🎉 User earned reward:', reward);
           
           // Award points to user
           await addPoints(10, 'Tangazo');
@@ -205,22 +277,46 @@ const UserAccount = ({ navigation, route }) => {
             friction: 5,
             useNativeDriver: true,
           }).start();
+          
+          // Preload next ad in background for instant availability
+          console.log('📦 Preloading next ad for instant availability...');
+          setTimeout(() => {
+            adMobService.loadRewardedAd();
+          }, 1000);
         },
         (error) => {
           // Error showing ad
+          console.error('❌ Ad show error:', error);
           setIsAdLoading(false);
-          showErrorModal(error || 'Tangazo halipatikani kwa sasa. Tafadhali jaribu tena baadaye.');
+          showErrorModal(error || 'Tangazo halipatikani kwa sasa. Tafadhali jaribu tena.');
+          
+          // Try to reload ad for next attempt
+          setTimeout(() => {
+            console.log('🔄 Reloading ad after error...');
+            adMobService.forceReload();
+          }, 2000);
         }
       );
       
       if (!success) {
+        console.log('❌ Ad show returned false');
         setIsAdLoading(false);
-        showErrorModal('Tangazo halipatikani kwa sasa.');
+        showErrorModal('Tangazo halipatikani kwa sasa. Tafadhali jaribu tena.');
+        
+        // Try to reload ad
+        setTimeout(() => {
+          adMobService.forceReload();
+        }, 2000);
       }
     } catch (error) {
-      console.error('Error showing ad:', error);
+      console.error('❌ Exception showing ad:', error);
       setIsAdLoading(false);
-      showErrorModal('Imeshindikana kuonyesha tangazo.');
+      showErrorModal('Imeshindikana kuonyesha tangazo. Tafadhali jaribu tena.');
+      
+      // Try to reload ad
+      setTimeout(() => {
+        adMobService.forceReload();
+      }, 2000);
     }
   };
 
