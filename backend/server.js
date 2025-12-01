@@ -21,6 +21,7 @@ const notificationRoutes = require('./routes/notifications');
 const adminRoutes = require('./routes/admin');
 const streamingRoutes = require('./routes/streaming');
 const settingsRoutes = require('./routes/settings');
+const zenoPayRoutes = require('./routes/zenopay');
 
 // Import middleware
 const { authMiddleware } = require('./middleware/auth');
@@ -165,6 +166,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/streaming', streamingRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/payments/zenopay', zenoPayRoutes); // ZenoPay payment routes
 
 // Socket.IO for real-time updates
 io.on('connection', (socket) => {

@@ -5,8 +5,9 @@ class NotificationService {
   // Send notification to all users or specific users
   async sendNotification(notificationData) {
     try {
+      // Use the endpoint that creates notification in database
       const response = await api.post(
-        `${API_ENDPOINTS.SEND_NOTIFICATION}`,
+        '/notifications/admin/send-immediate',
         notificationData
       );
       return response.data;

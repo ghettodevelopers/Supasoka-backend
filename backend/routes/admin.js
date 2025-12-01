@@ -952,8 +952,14 @@ router.get('/users', authMiddleware, adminOnly, async (req, res) => {
       prisma.user.count({ where })
     ]);
 
+    // Add isSubscribed computed field for AdminSupa compatibility
+    const usersWithSubscription = users.map(user => ({
+      ...user,
+      isSubscribed: user.isActivated && user.remainingTime > 0
+    }));
+
     res.json({
-      users,
+      users: usersWithSubscription,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -1090,6 +1096,133 @@ router.put('/users/:userId',
     } catch (error) {
       logger.error('Error updating user:', error);
       res.status(500).json({ error: 'Failed to update user' });
+    }
+  }
+);
+
+// Grant subscription to user with custom time
+router.post('/users/:userId/grant-subscription',
+  authMiddleware,
+  adminOnly,
+  [
+    body('duration').notEmpty().withMessage('Duration is required'),
+    body('unit').isIn(['minutes', 'hours', 'days', 'months']).withMessage('Unit must be minutes, hours, days, or months')
+  ],
+  async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { duration, unit, reason } = req.body;
+
+      // Convert duration to minutes
+      let timeInMinutes;
+      switch (unit) {
+        case 'minutes':
+          timeInMinutes = parseInt(duration);
+          break;
+        case 'hours':
+          timeInMinutes = parseInt(duration) * 60;
+          break;
+        case 'days':
+          timeInMinutes = parseInt(duration) * 24 * 60;
+          break;
+        case 'months':
+          timeInMinutes = parseInt(duration) * 30 * 24 * 60;
+          break;
+        default:
+          timeInMinutes = parseInt(duration) * 24 * 60; // Default to days
+      }
+
+      const subscriptionEnd = new Date(Date.now() + timeInMinutes * 60 * 1000);
+
+      // Update user subscription
+      const user = await prisma.user.update({
+        where: { id: userId },
+        data: {
+          isSubscribed: true,
+          isActivated: true,
+          remainingTime: timeInMinutes,
+          subscriptionEnd,
+          subscriptionType: 'admin_granted'
+        }
+      });
+
+      // Create notification
+      await prisma.notification.create({
+        data: {
+          title: 'Umepewa Muda wa Kutazama! 🎉',
+          message: `Hongera! Msimamizi amekupa muda wa ${duration} ${unit} wa kutazama vituo vyote. ${reason ? `Sababu: ${reason}` : ''}`,
+          type: 'promotion',
+          priority: 'high'
+        }
+      });
+
+      // Create user notification
+      const notification = await prisma.notification.findFirst({
+        orderBy: { createdAt: 'desc' }
+      });
+
+      if (notification) {
+        await prisma.userNotification.create({
+          data: {
+            userId: user.id,
+            notificationId: notification.id
+          }
+        });
+      }
+
+      // Send real-time notification
+      const io = req.app.get('io');
+      io.to(`user-${userId}`).emit('subscription-granted', {
+        duration,
+        unit,
+        timeInMinutes,
+        subscriptionEnd,
+        reason,
+        message: `Umepewa muda wa ${duration} ${unit} wa kutazama!`
+      });
+
+      io.to(`user-${userId}`).emit('notification', {
+        id: notification?.id,
+        title: 'Umepewa Muda wa Kutazama! 🎉',
+        message: `Hongera! Msimamizi amekupa muda wa ${duration} ${unit} wa kutazama vituo vyote.`,
+        type: 'promotion',
+        priority: 'high',
+        createdAt: new Date()
+      });
+
+      // Log audit action
+      const clientInfo = getClientInfo(req);
+      await auditLogService.logAdminAction({
+        adminId: req.admin.id,
+        adminEmail: req.admin.email,
+        action: 'grant_subscription',
+        entityType: 'user',
+        entityId: userId,
+        details: {
+          duration,
+          unit,
+          timeInMinutes,
+          subscriptionEnd,
+          reason
+        },
+        ...clientInfo
+      });
+
+      logger.info(`Subscription granted to user ${userId} by ${req.admin.email}: ${duration} ${unit}`);
+      res.json({ 
+        success: true,
+        user,
+        subscription: {
+          duration,
+          unit,
+          timeInMinutes,
+          subscriptionEnd
+        },
+        message: `Subscription granted successfully: ${duration} ${unit}`
+      });
+    } catch (error) {
+      logger.error('Error granting subscription:', error);
+      res.status(500).json({ error: 'Failed to grant subscription' });
     }
   }
 );
@@ -1889,6 +2022,39 @@ router.get('/audit-logs',
     }
   }
 );
+
+// User joined notification (public endpoint for mobile app)
+router.post('/user-joined', async (req, res) => {
+  try {
+    const { username, joinedAt } = req.body;
+
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+
+    logger.info(`New user joined: ${username} at ${joinedAt}`);
+
+    // Emit notification to admin via Socket.IO
+    const io = req.app.get('io');
+    if (io) {
+      io.to('admin-room').emit('user-joined', {
+        username,
+        joinedAt: joinedAt || new Date().toISOString(),
+        message: `${username} joined`,
+      });
+      logger.info(`User joined notification sent to admin: ${username}`);
+    }
+
+    res.json({ 
+      success: true, 
+      message: 'User join notification sent',
+      username 
+    });
+  } catch (error) {
+    logger.error('Error processing user join:', error);
+    res.status(500).json({ error: 'Failed to process user join' });
+  }
+});
 
 // Export the router
 module.exports = router;

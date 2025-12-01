@@ -22,8 +22,8 @@ const getExtraConfig = () => {
 const getApiUrl = () => {
   const extra = getExtraConfig();
 
-  // LOCAL DEVELOPMENT URL - Your computer's IP
-  const LOCAL_URL = 'http://10.74.21.98:10000/api';
+  // LOCAL DEVELOPMENT URL - Localhost for testing
+  const LOCAL_URL = 'http://localhost:10000/api';
   
   // PRODUCTION URL - Render.com backend
   const PRODUCTION_URL = 'https://supasoka-backend.onrender.com/api';
@@ -33,7 +33,7 @@ const getApiUrl = () => {
     return extra.apiUrl;
   }
 
-  // Use production Render.com backend (now has the fix!)
+  // PRODUCTION: Always use Render.com for release
   return PRODUCTION_URL;
 };
 
@@ -41,8 +41,8 @@ const getApiUrl = () => {
 const getSocketUrl = () => {
   const extra = getExtraConfig();
 
-  // LOCAL DEVELOPMENT SOCKET URL - Your computer's IP
-  const LOCAL_SOCKET_URL = 'http://10.74.21.98:10000';
+  // LOCAL DEVELOPMENT SOCKET URL - Localhost for testing
+  const LOCAL_SOCKET_URL = 'http://localhost:10000';
   
   // PRODUCTION SOCKET URL - Render.com backend
   const PRODUCTION_SOCKET_URL = 'https://supasoka-backend.onrender.com';
@@ -51,7 +51,7 @@ const getSocketUrl = () => {
     return extra.socketUrl;
   }
 
-  // Use production Render.com backend (now has the fix!)
+  // PRODUCTION: Always use Render.com for release
   return PRODUCTION_SOCKET_URL;
 };
 

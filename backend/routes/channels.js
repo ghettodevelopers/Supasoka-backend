@@ -150,28 +150,7 @@ router.get('/', async (req, res) => {
   };
 });
 
-// Get carousel images (public endpoint)
-router.get('/carousel', async (req, res) => {
-  try {
-    const carouselImages = await prisma.carouselImage.findMany({
-      where: { isActive: true },
-      orderBy: { order: 'asc' },
-      select: {
-        id: true,
-        title: true,
-        subtitle: true,
-        image: true,
-        order: true
-      }
-    });
-
-    res.json({ images: carouselImages });
-  } catch (error) {
-    logger.error('Error fetching carousel images:', error);
-    // Return empty array if database is unavailable
-    res.json({ images: [] });
-  }
-});
+// Carousel endpoint moved to line 652 with correct imageUrl field
 
 // Get featured channels (public endpoint) - MUST be before /:id route
 router.get('/featured', async (req, res) => {
@@ -651,15 +630,51 @@ router.delete('/:id',
 // Get carousel images (public endpoint)
 router.get('/carousel', async (req, res) => {
   try {
+    logger.info('📸 Fetching carousel images (public endpoint)...');
+    
     const images = await prisma.carouselImage.findMany({
       where: { isActive: true },
       orderBy: { order: 'asc' }
     });
 
+    logger.info(`✅ Found ${images.length} active carousel images`);
+    images.forEach((img, index) => {
+      logger.info(`   ${index + 1}. ${img.title} - ${img.imageUrl} (active: ${img.isActive})`);
+    });
+
     res.json({ images });
   } catch (error) {
-    logger.error('Error fetching carousel images:', error.message);
+    logger.error('❌ Error fetching carousel images:', error.message);
+    logger.error('   Stack:', error.stack);
     res.json({ images: [] });
+  }
+});
+
+// Alternative carousel endpoint (no auth required) - for production use
+router.get('/carousel-images', async (req, res) => {
+  try {
+    logger.info('📸 Fetching carousel images (alternative endpoint)...');
+    
+    const images = await prisma.carouselImage.findMany({
+      where: { isActive: true },
+      orderBy: { order: 'asc' }
+    });
+
+    logger.info(`✅ Found ${images.length} active carousel images`);
+    
+    res.json({ 
+      success: true,
+      count: images.length,
+      images 
+    });
+  } catch (error) {
+    logger.error('❌ Error fetching carousel images:', error.message);
+    res.status(500).json({ 
+      success: false,
+      count: 0,
+      images: [],
+      error: error.message 
+    });
   }
 });
 

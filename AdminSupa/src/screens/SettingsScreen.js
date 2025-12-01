@@ -192,7 +192,7 @@ const SettingsScreen = () => {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Settings</Text>
-          <Text style={styles.headerSubtitle}>Configure app settings</Text>
+          <Text style={styles.headerSubtitle}>Badili settings za app </Text>
         </View>
 
         {/* Free Trial Settings */}
@@ -202,12 +202,12 @@ const SettingsScreen = () => {
             <Text style={styles.sectionTitle}>Free Trial Duration</Text>
           </View>
           <Text style={styles.sectionDescription}>
-            Set the duration for new user free trial period
+            Muda wa majaribio kwa mtumiaji mpya
           </Text>
 
           <View style={styles.timeInputContainer}>
             <View style={styles.timeInputGroup}>
-              <Text style={styles.timeLabel}>Days</Text>
+              <Text style={styles.timeLabel}>Siku</Text>
               <TextInput
                 style={styles.timeInput}
                 value={freeTrialTime.days}
@@ -220,7 +220,7 @@ const SettingsScreen = () => {
               />
             </View>
             <View style={styles.timeInputGroup}>
-              <Text style={styles.timeLabel}>Hours</Text>
+              <Text style={styles.timeLabel}>Masaa</Text>
               <TextInput
                 style={styles.timeInput}
                 value={freeTrialTime.hours}
@@ -233,7 +233,7 @@ const SettingsScreen = () => {
               />
             </View>
             <View style={styles.timeInputGroup}>
-              <Text style={styles.timeLabel}>Minutes</Text>
+              <Text style={styles.timeLabel}>Dakika</Text>
               <TextInput
                 style={styles.timeInput}
                 value={freeTrialTime.minutes}
@@ -246,7 +246,7 @@ const SettingsScreen = () => {
               />
             </View>
             <View style={styles.timeInputGroup}>
-              <Text style={styles.timeLabel}>Seconds</Text>
+              <Text style={styles.timeLabel}>Sekunde</Text>
               <TextInput
                 style={styles.timeInput}
                 value={freeTrialTime.seconds}
@@ -270,7 +270,7 @@ const SettingsScreen = () => {
             ) : (
               <>
                 <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-                <Text style={styles.saveButtonText}>Save Free Trial Settings</Text>
+                <Text style={styles.saveButtonText}>Save Free Trial time</Text>
               </>
             )}
           </TouchableOpacity>

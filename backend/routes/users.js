@@ -148,36 +148,95 @@ router.post('/subscribe',
   }
 );
 
-// Get user watch history
+// Get user watch history (aggregated by channel)
 router.get('/watch-history', async (req, res) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-
-    const watchHistory = await prisma.watchHistory.findMany({
-      where: { userId: req.user.id },
-      include: { channel: true },
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: parseInt(limit)
+    // Get watch history grouped by channel with count
+    const watchHistory = await prisma.watchHistory.groupBy({
+      by: ['channelId'],
+      where: { userId: req.user?.id },
+      _count: {
+        channelId: true
+      },
+      orderBy: {
+        _count: {
+          channelId: 'desc'
+        }
+      },
+      take: 10
     });
 
-    const total = await prisma.watchHistory.count({
-      where: { userId: req.user.id }
-    });
+    // Get channel details for each entry
+    const historyWithChannels = await Promise.all(
+      watchHistory.map(async (item) => {
+        const channel = await prisma.channel.findUnique({
+          where: { id: item.channelId },
+          select: { name: true, logo: true }
+        });
+        return {
+          channelName: channel?.name || 'Unknown',
+          watchCount: item._count.channelId,
+          logo: channel?.logo
+        };
+      })
+    );
 
     res.json({
-      watchHistory,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / parseInt(limit))
-      }
+      success: true,
+      history: historyWithChannels
     });
   } catch (error) {
     logger.error('Error fetching watch history:', error);
     res.status(500).json({ error: 'Failed to fetch watch history' });
+  }
+});
+
+// Get user points history
+router.get('/points-history', async (req, res) => {
+  try {
+    const pointsHistory = await prisma.pointsHistory.findMany({
+      where: { userId: req.user?.id },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: {
+        points: true,
+        type: true,
+        description: true,
+        createdAt: true
+      }
+    });
+
+    // Format dates
+    const formattedHistory = pointsHistory.map(item => {
+      const date = new Date(item.createdAt);
+      const today = new Date();
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      
+      let dateLabel;
+      if (date.toDateString() === today.toDateString()) {
+        dateLabel = 'Leo';
+      } else if (date.toDateString() === yesterday.toDateString()) {
+        dateLabel = 'Jana';
+      } else {
+        dateLabel = date.toLocaleDateString('sw-TZ', { month: 'short', day: 'numeric' });
+      }
+
+      return {
+        date: dateLabel,
+        points: item.points,
+        type: item.type,
+        description: item.description
+      };
+    });
+
+    res.json({
+      success: true,
+      history: formattedHistory
+    });
+  } catch (error) {
+    logger.error('Error fetching points history:', error);
+    res.status(500).json({ error: 'Failed to fetch points history' });
   }
 });
 

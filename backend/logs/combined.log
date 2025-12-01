@@ -4724,3 +4724,11 @@
 {"level":"info","message":"🚀 Supasoka Backend Server running on 0.0.0.0:10000","service":"supasoka-backend","timestamp":"2025-11-29T19:13:27.403Z"}
 {"level":"info","message":"📊 Environment: development","service":"supasoka-backend","timestamp":"2025-11-29T19:13:27.403Z"}
 {"level":"info","message":"🔗 Health check: http://localhost:10000/health","service":"supasoka-backend","timestamp":"2025-11-29T19:13:27.404Z"}
+{"level":"info","message":"✅ Pure Node.js notification service initialized","service":"supasoka-backend","timestamp":"2025-11-30T17:53:17.293Z"}
+{"level":"info","message":"🚀 Supasoka Backend Server running on 0.0.0.0:10000","service":"supasoka-backend","timestamp":"2025-11-30T17:53:18.019Z"}
+{"level":"info","message":"📊 Environment: development","service":"supasoka-backend","timestamp":"2025-11-30T17:53:18.019Z"}
+{"level":"info","message":"🔗 Health check: http://localhost:10000/health","service":"supasoka-backend","timestamp":"2025-11-30T17:53:18.020Z"}
+{"level":"info","message":"✅ Pure Node.js notification service initialized","service":"supasoka-backend","timestamp":"2025-12-01T02:44:37.644Z"}
+{"level":"info","message":"🚀 Supasoka Backend Server running on 0.0.0.0:10000","service":"supasoka-backend","timestamp":"2025-12-01T02:44:37.934Z"}
+{"level":"info","message":"📊 Environment: development","service":"supasoka-backend","timestamp":"2025-12-01T02:44:37.934Z"}
+{"level":"info","message":"🔗 Health check: http://localhost:10000/health","service":"supasoka-backend","timestamp":"2025-12-01T02:44:37.935Z"}

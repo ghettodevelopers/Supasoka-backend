@@ -1,4 +1,8 @@
 {
   "name": "Supasoka",
-  "displayName": "Supasoka"
+  "displayName": "Supasoka",
+  "react-native-google-mobile-ads": {
+    "android_app_id": "ca-app-pub-5619803043988422~5036677593",
+    "ios_app_id": "ca-app-pub-5619803043988422~5036677593"
+  }
 }
