@@ -8,6 +8,23 @@ const channelAccessService = require('../services/channelAccessService');
 const router = express.Router();
 const prisma = new PrismaClient();
 
+// Update last active timestamp
+router.patch('/last-active', authMiddleware, async (req, res) => {
+  try {
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        lastActive: new Date()
+      }
+    });
+
+    res.json({ success: true, message: 'Last active updated' });
+  } catch (error) {
+    logger.error('Error updating last active:', error);
+    res.status(500).json({ error: 'Failed to update last active' });
+  }
+});
+
 // Get user profile
 router.get('/profile', authMiddleware, async (req, res) => {
   try {
@@ -451,19 +468,42 @@ router.patch('/admin/:uniqueUserId/activate', authMiddleware, adminOnly, async (
       accessLevel
     });
     
-    // Send real-time notification to user
+    // Calculate subscription end timestamp for real-time countdown
+    const subscriptionEndTime = accessExpiresAt ? accessExpiresAt.getTime() : null;
+    
+    // Send real-time notification to user with all data needed for dynamic countdown
     io.to(`user-${user.id}`).emit('account-activated', {
       message: `Akaunti yako imewashwa na msimamizi! Muda: ${timeDisplay}`,
       remainingTime: finalTimeInMinutes,
       accessLevel,
-      expiresAt: accessExpiresAt
+      expiresAt: accessExpiresAt,
+      subscriptionEndTime, // Timestamp for real-time countdown
+      grantedAt: new Date().toISOString(),
+      grantedBy: req.admin.email,
     });
 
-    // Send notification to admin dashboard
+    // Also emit subscription-granted for backward compatibility
+    io.to(`user-${user.id}`).emit('subscription-granted', {
+      duration: finalTimeInMinutes,
+      unit: 'minutes',
+      timeInMinutes: finalTimeInMinutes,
+      subscriptionEnd: accessExpiresAt,
+      subscriptionEndTime, // Timestamp for real-time countdown
+      message: `Umepewa muda wa ${timeDisplay} wa kutazama!`,
+      accessLevel,
+    });
+
+    // Send notification to admin dashboard with remaining time info
     io.to('admin-room').emit('user-activated', {
-      user,
+      user: {
+        ...user,
+        remainingTimeDisplay: timeDisplay,
+        subscriptionEndTime,
+      },
       activatedBy: req.admin.email,
-      timeAllocated: timeDisplay
+      timeAllocated: timeDisplay,
+      remainingTime: finalTimeInMinutes,
+      expiresAt: accessExpiresAt,
     });
 
     // Create system notification

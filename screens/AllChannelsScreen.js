@@ -17,12 +17,13 @@ import { useAppState } from '../contexts/AppStateContext';
 
 const AllChannelsScreen = ({ navigation }) => {
   const { channels, categories } = useApi();
-  const { isSubscribed, isChannelUnlocked } = useAppState();
+  const { isSubscribed, hasAdminAccess, isChannelUnlocked } = useAppState();
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleChannelPress = (channel) => {
-    if (isSubscribed || channel.isFree || isChannelUnlocked(channel.id)) {
+    // Check admin access (highest priority), subscription, free channel, or unlocked with points
+    if (hasAdminAccess || isSubscribed || channel.isFree || isChannelUnlocked(channel.id)) {
       navigation.navigate('Player', { channel });
     } else {
       navigation.navigate('Payment');
@@ -48,14 +49,14 @@ const AllChannelsScreen = ({ navigation }) => {
   // Filter channels by search query
   const getFilteredChannels = () => {
     let filtered = selectedCategory ? getCategoryChannels(selectedCategory) : channels;
-    
+
     if (searchQuery.trim()) {
-      filtered = filtered.filter(channel => 
+      filtered = filtered.filter(channel =>
         channel.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         channel.category?.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
-    
+
     return filtered;
   };
 
@@ -91,7 +92,7 @@ const AllChannelsScreen = ({ navigation }) => {
   // Render category card
   const renderCategoryCard = ({ item }) => {
     const channelCount = getCategoryChannelCount(item.name);
-    
+
     // Show all categories, even with 0 channels
     return (
       <TouchableOpacity
@@ -116,22 +117,22 @@ const AllChannelsScreen = ({ navigation }) => {
               <Icon name="television" size={32} color={channelCount > 0 ? "#fff" : "#6b7280"} />
             </LinearGradient>
           </View>
-          
+
           <Text style={[
             styles.categoryCardTitle,
             channelCount === 0 && styles.categoryCardTitleEmpty
           ]}>
             {item.nameSwahili || item.name}
           </Text>
-          
+
           <View style={[
             styles.categoryCardInfo,
             channelCount === 0 && styles.categoryCardInfoEmpty
           ]}>
-            <Icon 
-              name={channelCount > 0 ? "play-circle" : "clock-outline"} 
-              size={20} 
-              color={channelCount > 0 ? "#3b82f6" : "#6b7280"} 
+            <Icon
+              name={channelCount > 0 ? "play-circle" : "clock-outline"}
+              size={20}
+              color={channelCount > 0 ? "#3b82f6" : "#6b7280"}
             />
             <Text style={[
               styles.categoryCardCount,
@@ -147,7 +148,7 @@ const AllChannelsScreen = ({ navigation }) => {
 
   // If category is selected, show channels in that category
   console.log('🔍 Selected category:', selectedCategory);
-  
+
   if (selectedCategory) {
     console.log('📺 Showing channels for category:', selectedCategory);
     return (

@@ -31,7 +31,7 @@ class UserService {
     }
   }
 
-  // Activate user with time allocation
+  // Activate user with time allocation (legacy - use grantSubscription instead)
   async activateUser(uniqueUserId, timeData) {
     try {
       const response = await api.patch(
@@ -41,6 +41,31 @@ class UserService {
       return response.data;
     } catch (error) {
       console.error('Error activating user:', error);
+      throw error;
+    }
+  }
+
+  // Grant subscription to user with timestamp-based expiration
+  async grantSubscription(userId, duration, unit, reason = '') {
+    try {
+      const response = await api.post(
+        API_ENDPOINTS.USER_GRANT_SUBSCRIPTION(userId),
+        { duration, unit, reason }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error granting subscription:', error);
+      throw error;
+    }
+  }
+
+  // Check and expire old subscriptions
+  async checkExpiredSubscriptions() {
+    try {
+      const response = await api.post(API_ENDPOINTS.CHECK_EXPIRED_SUBSCRIPTIONS);
+      return response.data;
+    } catch (error) {
+      console.error('Error checking expired subscriptions:', error);
       throw error;
     }
   }

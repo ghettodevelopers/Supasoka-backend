@@ -15,6 +15,30 @@ const getClientInfo = (req) => ({
   userAgent: req.headers['user-agent'] || 'unknown'
 });
 
+// Helper to format channel with drmEnabled field
+const formatChannel = (channel) => {
+  let parsedDrmConfig = null;
+  if (channel.drmConfig) {
+    try {
+      parsedDrmConfig = typeof channel.drmConfig === 'string' 
+        ? JSON.parse(channel.drmConfig) 
+        : channel.drmConfig;
+    } catch (e) {
+      logger.warn(`Failed to parse drmConfig for channel ${channel.id}:`, e.message);
+      parsedDrmConfig = null;
+    }
+  }
+  
+  // DRM is enabled if drmConfig exists and has a clearKey
+  const drmEnabled = !!(parsedDrmConfig && parsedDrmConfig.clearKey);
+  
+  return {
+    ...channel,
+    drmConfig: parsedDrmConfig,
+    drmEnabled: drmEnabled
+  };
+};
+
 // Get all channels (public endpoint)
 router.get('/', async (req, res) => {
   try {
@@ -39,8 +63,9 @@ router.get('/', async (req, res) => {
         { createdAt: 'desc' }
       ]
     });
-    // Return actual channels (may be empty if none exist yet)
-    res.json({ channels });
+    // Format channels with drmEnabled field
+    const formattedChannels = channels.map(formatChannel);
+    res.json({ channels: formattedChannels });
   } catch (error) {
     logger.error('Error fetching channels (likely database unavailable):', error.message);
 
@@ -298,7 +323,8 @@ router.post('/',
     body('category').notEmpty().withMessage('Category is required'),
     body('streamUrl').notEmpty().isURL().withMessage('Valid stream URL is required'),
     body('color').optional().isArray().withMessage('Color must be an array of gradient colors'),
-    body('logo').optional().isURL().withMessage('Logo must be a valid URL')
+    body('logo').optional().isURL().withMessage('Logo must be a valid URL'),
+    body('drmEnabled').optional().isBoolean().withMessage('drmEnabled must be boolean')
   ],
   async (req, res) => {
     try {
@@ -325,6 +351,8 @@ router.post('/',
       } = req.body;
 
       const numericPriority = Number.isFinite(Number(priority)) ? Number(priority) : 0;
+      const drmConfigValue = drmConfig ? JSON.stringify(drmConfig) : null;
+      
       const sanitizedData = {
         name: name.trim(),
         logo: logo?.trim() || null,
@@ -333,11 +361,13 @@ router.post('/',
         hd: Boolean(hd),
         streamUrl: streamUrl.trim(),
         backupUrls: JSON.stringify(Array.isArray(backupUrls) ? backupUrls : []),
-        drmConfig: drmConfig ? JSON.stringify(drmConfig) : null,
+        drmConfig: drmConfigValue,
         priority: numericPriority,
         description: description?.trim() || null,
         isFree: Boolean(isFree)
       };
+      
+      logger.info(`Creating channel "${name}" with DRM: ${drmConfigValue ? 'Enabled' : 'Disabled'}`);
 
       const channel = await prisma.channel.create({
         data: sanitizedData
@@ -360,18 +390,21 @@ router.post('/',
         ...clientInfo
       });
 
+      // Format channel with drmEnabled field
+      const formattedChannel = formatChannel(channel);
+
       // Notify admin dashboard about new channel
       const io = req.app.get('io');
-      io.to('admin-room').emit('channel-created', { channel });
+      io.to('admin-room').emit('channel-created', { channel: formattedChannel });
 
       // Broadcast to all connected clients for real-time update
-      io.emit('channel-created', { channel });
+      io.emit('channel-created', { channel: formattedChannel });
 
       // Send notification about new channel
       await notificationService.sendNewChannelNotification(channel);
 
       logger.info(`Channel created: "${channel.name}" (${channel.category}) by admin ${req.admin.email}`);
-      res.status(201).json({ channel });
+      res.status(201).json({ channel: formattedChannel });
     } catch (error) {
       if (error?.name === 'PrismaClientInitializationError') {
         return res.status(503).json({ error: 'Database unavailable. Please ensure PostgreSQL is running.' });
@@ -425,6 +458,7 @@ router.put('/:id',
     body('streamUrl').optional().custom((v) => v === '' || v === null || v === undefined || /^(https?:)?\/\//.test(v)).withMessage('streamUrl must be a valid URL or empty'),
     body('backupUrls').optional().isArray().withMessage('backupUrls must be an array'),
     body('drmConfig').optional(),
+    body('drmEnabled').optional().isBoolean().withMessage('drmEnabled must be boolean'),
     body('priority').optional().customSanitizer(v => (v === '' || v === null || v === undefined) ? undefined : parseInt(v, 10)).isInt().withMessage('priority must be an integer'),
     body('description').optional().isString(),
     body('isActive').optional().customSanitizer(v => (v === 'true' ? true : v === 'false' ? false : v)).isBoolean().withMessage('isActive must be boolean'),
@@ -450,7 +484,11 @@ router.put('/:id',
         return res.status(404).json({ error: 'Channel not found' });
       }
       const payload = Object.fromEntries(
-        Object.entries(req.body).filter(([_, v]) => v !== '' && v !== undefined && v !== null)
+        Object.entries(req.body).filter(([key, v]) => {
+          // Always allow drmConfig even if null (to support disabling DRM)
+          if (key === 'drmConfig') return true;
+          return v !== '' && v !== undefined && v !== null;
+        })
       );
 
       const updates = {};
@@ -461,7 +499,14 @@ router.put('/:id',
       if (payload.hd !== undefined) updates.hd = Boolean(payload.hd);
       if (payload.streamUrl !== undefined) updates.streamUrl = payload.streamUrl;
       if (payload.backupUrls !== undefined) updates.backupUrls = JSON.stringify(Array.isArray(payload.backupUrls) ? payload.backupUrls : []);
-      if (payload.drmConfig !== undefined) updates.drmConfig = payload.drmConfig ? JSON.stringify(payload.drmConfig) : null;
+      
+      // Always handle drmConfig - set it to null if not provided or set to its stringified value
+      if (payload.drmConfig !== undefined || req.body.drmConfig !== undefined) {
+        const drmConfigValue = req.body.drmConfig ? JSON.stringify(req.body.drmConfig) : null;
+        updates.drmConfig = drmConfigValue;
+        logger.info(`DRM config update for channel ${channelId}: ${drmConfigValue ? 'Enabled with clearKey' : 'Disabled (null)'}`);
+      }
+      
       if (payload.priority !== undefined) {
         const p = Number(payload.priority);
         if (Number.isFinite(p)) updates.priority = p;
@@ -490,16 +535,19 @@ router.put('/:id',
         ...clientInfo
       });
 
+      // Format channel with drmEnabled field
+      const formattedChannel = formatChannel(channel);
+
       // Notify admin dashboard and users about channel update
       const io = req.app.get('io');
-      io.to('admin-room').emit('channel-updated', { channel });
-      io.emit('channel-updated', { channelId, channel, updates });
+      io.to('admin-room').emit('channel-updated', { channel: formattedChannel });
+      io.emit('channel-updated', { channelId, channel: formattedChannel, updates });
 
       // Send notification about channel update
       await notificationService.sendChannelUpdate(channel, 'updated');
 
       logger.info(`Channel updated: ${channel.name} by admin ${req.admin.email}`);
-      res.json({ channel });
+      res.json({ channel: formattedChannel });
     } catch (error) {
       if (error?.code === 'P2025') {
         return res.status(404).json({ error: 'Channel not found' });

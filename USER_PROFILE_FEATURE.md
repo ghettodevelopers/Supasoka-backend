@@ -133,7 +133,7 @@ const initializeUser = async () => {
     <View>
       <Text>Points Zangu</Text>
       <Text style={styles.pointsValue}>{points}</Text>
-      <Text>💡 50 points = Kituo 1</Text>
+      <Text>💡 120 pointi kwa Kituo 1</Text>
     </View>
   </View>
   

@@ -176,19 +176,28 @@ class UserService {
   }
 
   /**
-   * Update user's last active timestamp
+   * Update user's last active timestamp (non-blocking)
    */
   async updateLastActive() {
     try {
-      if (!this.user || !this.token) return;
+      if (!this.user || !this.token) {
+        console.log('⚠️ Skipping last active update - no user or token');
+        return;
+      }
 
-      await apiService.patch('/users/last-active', {
+      // Make this non-blocking - don't await
+      apiService.patch('/users/last-active', {
         deviceId: this.deviceId
+      }).then(() => {
+        console.log('✅ Last active updated');
+      }).catch((error) => {
+        // Silently fail - not critical
+        console.log('⚠️ Last active update failed (non-critical):', error.message);
       });
 
-      console.log('✅ Last active updated');
     } catch (error) {
-      console.error('Error updating last active:', error);
+      // Silently fail - not critical
+      console.log('⚠️ Last active update error (non-critical):', error.message);
     }
   }
 

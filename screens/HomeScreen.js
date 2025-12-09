@@ -20,12 +20,21 @@ import NetInfo from '@react-native-community/netinfo';
 import { useApi } from '../contexts/ApiContext';
 import { useAppState } from '../contexts/AppStateContext';
 import { useNotifications } from '../contexts/NotificationContext';
+import UnlockModal from '../components/UnlockModal';
+import SubscriptionGrantModal from '../components/SubscriptionGrantModal';
 
 const { width } = Dimensions.get('window');
 
 const HomeScreen = ({ navigation }) => {
   const { channels, carouselImages, categories, loading, refreshData, getFreeChannels } = useApi();
-  const { isSubscribed, isChannelUnlocked, points, spendPoints, unlockChannel } = useAppState();
+  const {
+    isSubscribed,
+    hasAdminAccess,
+    isChannelUnlocked,
+    points,
+    spendPoints,
+    unlockChannelTemporarily,
+  } = useAppState();
   const { unreadCount } = useNotifications();
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -35,6 +44,8 @@ const HomeScreen = ({ navigation }) => {
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [showOfflineModal, setShowOfflineModal] = useState(false);
+  const [showGrantModal, setShowGrantModal] = useState(false);
+  const [grantedTime, setGrantedTime] = useState(0);
   const carouselRef = React.useRef(null);
   const modalSlideAnim = React.useRef(new Animated.Value(0)).current;
   const offlineModalAnim = React.useRef(new Animated.Value(0)).current;
@@ -45,7 +56,7 @@ const HomeScreen = ({ navigation }) => {
     const unsubscribe = NetInfo.addEventListener(state => {
       const online = state.isConnected && state.isInternetReachable !== false;
       setIsOnline(online);
-      
+
       if (!online && !showOfflineModal) {
         setShowOfflineModal(true);
         Animated.spring(offlineModalAnim, {
@@ -72,10 +83,21 @@ const HomeScreen = ({ navigation }) => {
     ).start();
   }, []);
 
-  // Set up global refresh function
+  // Set up global refresh function and subscription grant modal
   useEffect(() => {
     global.refreshChannels = refreshData;
     global.refreshCarousel = refreshData;
+    
+    // Set up global function to show subscription grant modal
+    global.showSubscriptionGrantModal = (timeInMinutes) => {
+      console.log('🎉 Showing subscription grant modal:', timeInMinutes);
+      setGrantedTime(timeInMinutes);
+      setShowGrantModal(true);
+    };
+    
+    return () => {
+      delete global.showSubscriptionGrantModal;
+    };
   }, []);
 
   // Debug: Log carousel images whenever they change
@@ -98,7 +120,7 @@ const HomeScreen = ({ navigation }) => {
     const interval = setInterval(() => {
       setCurrentCarouselIndex((prevIndex) => {
         const nextIndex = (prevIndex + 1) % carouselImages.length;
-        
+
         // Scroll to next item
         if (carouselRef.current) {
           carouselRef.current.scrollToIndex({
@@ -106,7 +128,7 @@ const HomeScreen = ({ navigation }) => {
             animated: true,
           });
         }
-        
+
         return nextIndex;
       });
     }, 3000); // Change every 3 seconds
@@ -124,20 +146,20 @@ const HomeScreen = ({ navigation }) => {
       }).start();
       return;
     }
-    
+
     console.log('🔄 User initiated refresh - Updating all data...');
     setRefreshing(true);
-    
+
     try {
       // Refresh all data from AdminSupa and backend
       await refreshData();
-      
+
       // Reset carousel to first slide
       setCurrentCarouselIndex(0);
       if (carouselRef.current) {
         carouselRef.current.scrollToIndex({ index: 0, animated: true });
       }
-      
+
       console.log('✅ Refresh complete - All data updated!');
       console.log(`📺 Channels: ${channels.length}`);
       console.log(`🎬 Carousel: ${carouselImages.length} images`);
@@ -163,22 +185,22 @@ const HomeScreen = ({ navigation }) => {
     console.log('🔄 Checking connection...');
     const state = await NetInfo.fetch();
     const online = state.isConnected && state.isInternetReachable !== false;
-    
+
     if (online) {
       console.log('✅ Connection restored - Refreshing all data...');
       closeOfflineModal();
       setRefreshing(true);
-      
+
       try {
         // Refresh all data from AdminSupa and backend
         await refreshData();
-        
+
         // Reset carousel to first slide
         setCurrentCarouselIndex(0);
         if (carouselRef.current) {
           carouselRef.current.scrollToIndex({ index: 0, animated: true });
         }
-        
+
         console.log('✅ All data refreshed successfully!');
       } catch (error) {
         console.error('❌ Refresh failed:', error);
@@ -190,19 +212,20 @@ const HomeScreen = ({ navigation }) => {
     }
   };
 
-  const handleChannelPress = (channel) => {
-    // Check if user can access
-    if (isSubscribed || channel.isFree || isChannelUnlocked(channel.id)) {
+  const handleChannelPress = async (channel) => {
+    // Check admin access (highest priority), subscription, or free channel, or unlocked with points
+    if (hasAdminAccess || isSubscribed || channel.isFree || isChannelUnlocked(channel.id)) {
       navigation.navigate('Player', { channel });
-    } else {
-      // Show unlock modal
-      setSelectedChannel(channel);
-      setShowUnlockModal(true);
-      Animated.spring(modalSlideAnim, {
-        toValue: 1,
-        useNativeDriver: true,
-      }).start();
+      return;
     }
+
+    // Show unlock modal for unsubscribed users
+    setSelectedChannel(channel);
+    setShowUnlockModal(true);
+    Animated.spring(modalSlideAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+    }).start();
   };
 
   const closeUnlockModal = () => {
@@ -222,34 +245,33 @@ const HomeScreen = ({ navigation }) => {
   };
 
   const handleWatchFree = async () => {
-    const REQUIRED_POINTS = 50;
-    
+    const REQUIRED_POINTS = 120;
+
     if (points < REQUIRED_POINTS) {
       // Not enough points - navigate to profile to watch ads
       closeUnlockModal();
       setTimeout(() => {
-        Alert.alert(
-          'Ooopsss!',
-          `Hauna points za kutosha. Unahitaji points ${REQUIRED_POINTS} lakini una ${points}. Tafadhali kusanya points nyingi kwa kutazama matangazo ili uweze kutazama bure.`,
-          [
-            { text: 'Sawa', onPress: () => navigation.navigate('UserAccount', { scrollToPoints: true }) }
-          ]
-        );
+        navigation.navigate('UserAccount', { scrollToPoints: true });
       }, 300);
       return;
     }
 
-    // Deduct points and unlock channel
+    // Deduct points and unlock channel TEMPORARILY (not persisted)
     setIsUnlocking(true);
     try {
-      await spendPoints(REQUIRED_POINTS);
-      await unlockChannel(selectedChannel.id);
-      closeUnlockModal();
-      setTimeout(() => {
-        navigation.navigate('Player', { channel: selectedChannel });
-      }, 300);
+      const success = await spendPoints(REQUIRED_POINTS, `Fungua ${selectedChannel.name}`);
+      if (success) {
+        unlockChannelTemporarily(selectedChannel.id);
+        console.log(`✅ Channel unlocked temporarily with ${REQUIRED_POINTS} points`);
+        closeUnlockModal();
+        setTimeout(() => {
+          navigation.navigate('Player', { channel: selectedChannel });
+        }, 300);
+      } else {
+        console.error('❌ Failed to spend points');
+      }
     } catch (error) {
-      Alert.alert('Kosa', 'Imeshindikana kutumia points. Tafadhali jaribu tena.');
+      console.error('Error unlocking channel:', error);
     } finally {
       setIsUnlocking(false);
     }
@@ -263,7 +285,7 @@ const HomeScreen = ({ navigation }) => {
 
   const renderCarousel = () => {
     console.log('🎨 Rendering carousel with', carouselImages?.length || 0, 'images');
-    
+
     if (!carouselImages || carouselImages.length === 0) {
       console.log('⚠️ No carousel images to display');
       return null;
@@ -716,85 +738,21 @@ const HomeScreen = ({ navigation }) => {
       </ScrollView>
 
       {/* Channel Unlock Modal */}
-      <Modal
+      <UnlockModal
         visible={showUnlockModal}
-        transparent
-        animationType="fade"
-        onRequestClose={closeUnlockModal}
-      >
-        <TouchableOpacity 
-          style={styles.unlockModalOverlay} 
-          activeOpacity={1}
-          onPress={closeUnlockModal}
-        >
-          <Animated.View
-            style={[
-              styles.unlockModalContent,
-              {
-                transform: [{
-                  translateY: modalSlideAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [600, 0],
-                  }),
-                }],
-              },
-            ]}
-          >
-            <TouchableOpacity activeOpacity={1}>
-              <View style={styles.unlockModalHeader}>
-                <Icon name="lock" size={50} color="#ef4444" />
-                <Text style={styles.unlockModalTitle}>Hauna Kifurushi Kwa Sasa</Text>
-                <Text style={styles.unlockModalSubtitle}>
-                  Lipia kifurushi ili kutazama vituo vyote au tumia points kutazama bure
-                </Text>
-              </View>
+        onClose={closeUnlockModal}
+        onPayment={handlePayment}
+        onPoints={handleWatchFree}
+        points={points}
+        requiredPoints={120}
+      />
 
-              <View style={styles.unlockModalButtons}>
-                <TouchableOpacity
-                  style={styles.unlockPayButton}
-                  onPress={handlePayment}
-                  activeOpacity={0.8}
-                >
-                  <LinearGradient
-                    colors={['#3b82f6', '#2563eb']}
-                    style={styles.unlockButtonGradient}
-                  >
-                    <Icon name="credit-card" size={24} color="#fff" />
-                    <Text style={styles.unlockButtonText}>Lipia</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.unlockFreeButton}
-                  onPress={handleWatchFree}
-                  disabled={isUnlocking}
-                  activeOpacity={0.8}
-                >
-                  <LinearGradient
-                    colors={['#10b981', '#059669']}
-                    style={styles.unlockButtonGradient}
-                  >
-                    <Icon name="star" size={24} color="#fff" />
-                    <Text style={styles.unlockButtonText}>
-                      {isUnlocking ? 'Inafungua...' : 'Angalia Bure'}
-                    </Text>
-                    <View style={styles.pointsBadge}>
-                      <Text style={styles.pointsBadgeText}>-50</Text>
-                    </View>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
-
-              <TouchableOpacity
-                style={styles.unlockCancelButton}
-                onPress={closeUnlockModal}
-              >
-                <Text style={styles.unlockCancelText}>Ghairi</Text>
-              </TouchableOpacity>
-            </TouchableOpacity>
-          </Animated.View>
-        </TouchableOpacity>
-      </Modal>
+      {/* Subscription Grant Modal */}
+      <SubscriptionGrantModal
+        visible={showGrantModal}
+        onClose={() => setShowGrantModal(false)}
+        grantedTime={grantedTime}
+      />
 
       {/* Offline Modal */}
       <Modal
@@ -824,7 +782,7 @@ const HomeScreen = ({ navigation }) => {
 
             {/* Title */}
             <Text style={styles.offlineTitle}>Hakuna Mtandao</Text>
-            
+
             {/* Message */}
             <Text style={styles.offlineMessage}>
               Samahani, huna muunganisho wa intaneti.
@@ -867,6 +825,7 @@ const HomeScreen = ({ navigation }) => {
           </Animated.View>
         </View>
       </Modal>
+
     </SafeAreaView>
   );
 };

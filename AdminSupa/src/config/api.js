@@ -75,9 +75,11 @@ export const API_ENDPOINTS = {
   // Users
   USERS: '/admin/users',
   USER_ACTIVATE: (userId) => `/users/admin/${userId}/activate`,
+  USER_GRANT_SUBSCRIPTION: (userId) => `/admin/users/${userId}/grant-subscription`,
   USER_BLOCK: (userId) => `/users/admin/${userId}/block`,
   USER_ACCESS: (userId) => `/users/admin/${userId}/access-level`,
   USER_FIND: (uniqueUserId) => `/users/admin/find/${uniqueUserId}`,
+  CHECK_EXPIRED_SUBSCRIPTIONS: '/admin/subscriptions/check-expired',
 
   // Channels
   CHANNELS: '/channels',

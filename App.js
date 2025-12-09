@@ -8,6 +8,7 @@ import { ContactProvider } from './contexts/ContactContext';
 import AppNavigator from './navigation/AppNavigator';
 import userService from './services/userService';
 import timeCheckerService from './services/timeCheckerService';
+import adMobService from './services/adMobService';
 
 const App = () => {
   const [isInitializing, setIsInitializing] = useState(true);
@@ -25,6 +26,11 @@ const App = () => {
   const initializeApp = async () => {
     try {
       console.log('🚀 Initializing Supasoka...');
+      
+      // Initialize AdMob FIRST
+      console.log('📱 Initializing AdMob...');
+      await adMobService.initialize();
+      console.log('✅ AdMob ready');
       
       // Initialize user (registers with backend if new)
       const { user, isNewUser } = await userService.initializeUser();

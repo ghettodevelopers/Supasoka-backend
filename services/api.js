@@ -43,11 +43,11 @@ class ApiService {
     // Always use Render.com as primary
     const renderUrl = 'https://supasoka-backend.onrender.com/api';
     
+    // Quick test with short timeout
     try {
-      console.log('🔄 Connecting to Render.com backend...');
-      console.log('⏳ Please wait - Render.com may take up to 60 seconds to wake up...');
+      console.log('🔄 Quick connection test to Render.com...');
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s for Render cold start
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s quick test
 
       const response = await fetch('https://supasoka-backend.onrender.com/health', {
         method: 'GET',
@@ -57,39 +57,17 @@ class ApiService {
       clearTimeout(timeoutId);
 
       if (response.ok) {
-        console.log('✅ Connected to Render.com backend successfully');
+        console.log('✅ Render.com backend ready!');
         this.baseURL = renderUrl;
         return renderUrl;
       }
     } catch (error) {
-      console.log('⚠️ Render.com connection issue:', error.message);
-      console.log('💡 Render.com may be cold starting - this is normal');
+      console.log('⚠️ Render.com quick test failed - may be cold starting');
     }
 
-    // Fallback to other URLs only if Render fails
-    for (const baseUrl of FALLBACK_URLS.slice(1)) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-        const response = await fetch(`${baseUrl.replace('/api', '')}/health`, {
-          method: 'GET',
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (response.ok) {
-          console.log(`✅ Connection successful: ${baseUrl}`);
-          this.baseURL = baseUrl;
-          return baseUrl;
-        }
-      } catch (error) {
-        console.log(`❌ Connection failed: ${baseUrl}`);
-      }
-    }
-
-    console.log('⚠️ Using Render.com URL (may be cold starting)');
+    // If quick test fails, just use Render.com anyway
+    // It will wake up on first request
+    console.log('💡 Using Render.com (will wake up on first request)');
     this.baseURL = renderUrl;
     return this.baseURL;
   }
@@ -111,71 +89,43 @@ class ApiService {
       headers,
     };
 
-    console.log(`🔄 API Request: ${config.method || 'GET'} ${endpoint}`);
+    console.log(`🔄 ${config.method || 'GET'} ${endpoint}`);
 
-    for (let urlIndex = 0; urlIndex < FALLBACK_URLS.length; urlIndex++) {
-      try {
-        const currentUrl = `${FALLBACK_URLS[urlIndex]}${endpoint}`;
-        
-        const controller = new AbortController();
-        // 60 seconds timeout for Render.com cold starts
-        const timeoutId = setTimeout(() => controller.abort(), 60000);
+    // Try primary URL first with longer timeout for cold starts
+    try {
+      const controller = new AbortController();
+      // 30 seconds timeout - balance between cold start and responsiveness
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-        const fetchPromise = fetch(currentUrl, {
-          ...requestConfig,
-          signal: controller.signal,
-        });
+      const response = await fetch(`${this.baseURL}${endpoint}`, {
+        ...requestConfig,
+        signal: controller.signal,
+      });
 
-        const response = await fetchPromise;
-        clearTimeout(timeoutId);
+      clearTimeout(timeoutId);
 
-        console.log(`📡 Response: ${response.status} ${response.statusText}`);
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`HTTP ${response.status}: ${errorText}`);
-        }
-
-        const contentType = response.headers.get('content-type');
-        let data;
-        
-        if (contentType && contentType.includes('application/json')) {
-          const text = await response.text();
-          data = text ? JSON.parse(text) : {};
-        } else {
-          data = await response.text();
-        }
-
-        console.log(`✅ API Success: ${config.method || 'GET'} ${endpoint}`);
-        
-        // Update baseURL if we switched
-        if (FALLBACK_URLS[urlIndex] !== this.baseURL) {
-          console.log(`🔄 Switched to: ${FALLBACK_URLS[urlIndex]}`);
-          this.baseURL = FALLBACK_URLS[urlIndex];
-        }
-
-        return data;
-
-      } catch (error) {
-        console.log(`❌ Request failed (attempt ${urlIndex + 1}): ${error.message}`);
-        
-        // If it's a network error, try next URL
-        if (error.message.includes('fetch') || 
-            error.message.includes('timeout') || 
-            error.message.includes('Network') ||
-            error.message.includes('aborted')) {
-          if (urlIndex < FALLBACK_URLS.length - 1) {
-            console.log('🔄 Trying next URL...');
-            continue;
-          }
-        }
-        
-        // If it's an HTTP error or last URL, throw
-        throw error;
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
-    }
 
-    throw new Error('All API endpoints failed');
+      const contentType = response.headers.get('content-type');
+      let data;
+      
+      if (contentType && contentType.includes('application/json')) {
+        const text = await response.text();
+        data = text ? JSON.parse(text) : {};
+      } else {
+        data = await response.text();
+      }
+
+      console.log(`✅ ${config.method || 'GET'} ${endpoint}`);
+      return data;
+
+    } catch (error) {
+      console.log(`⚠️ Request failed: ${error.message}`);
+      throw error;
+    }
   }
 
   async get(endpoint, config = {}) {

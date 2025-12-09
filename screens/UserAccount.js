@@ -11,6 +11,7 @@ import {
   Animated,
   BackHandler,
   Linking,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
@@ -18,8 +19,10 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAppState } from '../contexts/AppStateContext';
 import { useContact } from '../contexts/ContactContext';
+import { useNotifications } from '../contexts/NotificationContext';
 import apiService from '../services/api';
 import adMobService from '../services/adMobService';
+import NotificationToggleModal from '../components/NotificationToggleModal';
 
 const UserAccount = ({ navigation, route }) => {
   const {
@@ -29,6 +32,9 @@ const UserAccount = ({ navigation, route }) => {
     isSubscribed,
     addPoints,
     updateUser,
+    hasAdminAccess,
+    subscriptionEndTime,
+    formatRemainingTimeWithSeconds,
   } = useAppState();
 
   const [isAdLoading, setIsAdLoading] = useState(false);
@@ -47,56 +53,71 @@ const UserAccount = ({ navigation, route }) => {
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   const [watchHistory, setWatchHistory] = useState([]);
   const [pointsHistory, setPointsHistory] = useState([]);
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-  
+
   const { contactSettings } = useContact();
+  const { requestNotificationPermission } = useNotifications();
   const slideAnim = useRef(new Animated.Value(0)).current;
   const scrollToPoints = route.params?.scrollToPoints;
 
   // Generate unique username on first launch
   useEffect(() => {
     initializeUser();
-    initializeAdMob();
+    // AdMob is already initialized in App.js
+    console.log('📱 UserAccount loaded, checking ad status...');
+    setTimeout(() => {
+      adMobService.printDiagnostics();
+    }, 1000);
   }, []);
 
-  // Initialize AdMob
-  const initializeAdMob = async () => {
-    try {
-      await adMobService.initialize();
-      console.log('AdMob initialized in UserAccount');
-    } catch (error) {
-      console.error('Failed to initialize AdMob:', error);
-    }
-  };
-
-  // Calculate time left countdown
+  // Calculate time left countdown - updates every second for real-time display
   useEffect(() => {
-    if (!isSubscribed || remainingTime <= 0) return;
+    if (!isSubscribed || remainingTime <= 0) {
+      setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+      return;
+    }
 
+    // Function to calculate time components from subscription end time
     const calculateTimeLeft = () => {
-      const totalSeconds = remainingTime * 60;
+      let totalSeconds;
+
+      // Use subscriptionEndTime for accurate countdown if available
+      if (subscriptionEndTime) {
+        const now = Date.now();
+        const remainingMs = subscriptionEndTime - now;
+        totalSeconds = Math.max(0, Math.floor(remainingMs / 1000));
+      } else {
+        // Fallback to remainingTime in minutes
+        totalSeconds = Math.floor(remainingTime * 60);
+      }
+
       const days = Math.floor(totalSeconds / 86400);
       const hours = Math.floor((totalSeconds % 86400) / 3600);
       const minutes = Math.floor((totalSeconds % 3600) / 60);
       const seconds = totalSeconds % 60;
-      
+
       setTimeLeft({ days, hours, minutes, seconds });
     };
 
+    // Calculate immediately
     calculateTimeLeft();
+
+    // Update every second for real-time countdown
     const interval = setInterval(calculateTimeLeft, 1000);
 
     return () => clearInterval(interval);
-  }, [remainingTime, isSubscribed]);
+  }, [remainingTime, isSubscribed, subscriptionEndTime]);
 
   const initializeUser = async () => {
     try {
       // Get user data from storage (contains uniqueUserId from backend)
       const storedUser = await AsyncStorage.getItem('user');
-      
+
       if (storedUser) {
         const userData = JSON.parse(storedUser);
-        
+
         // Use uniqueUserId from backend as the username
         if (userData.uniqueUserId) {
           setUsername(userData.uniqueUserId);
@@ -121,92 +142,101 @@ const UserAccount = ({ navigation, route }) => {
   };
 
   const handleWatchAd = async () => {
-    console.log('🎬 User clicked watch ad button');
-    
-    // Check if ad is already loaded (instant show)
+    console.log('🎬 Watch ad clicked');
+
+    setIsAdLoading(true);
+    adMobService.printDiagnostics();
+
     const adStatus = adMobService.getAdStatus();
-    console.log('📊 Ad status:', adStatus);
-    
+
     if (adStatus.isReady) {
-      console.log('⚡ Ad already loaded! Showing immediately with short countdown...');
-      
-      // Show very short countdown (2 seconds) since ad is ready
-      setCountdown(2);
+      console.log('✅ Ad ready, showing now');
+      setCountdown(1); // ✅ FASTER: 1 second countdown
       setShowCountdownModal(true);
       Animated.spring(countdownScaleAnim, {
         toValue: 1,
         friction: 5,
         useNativeDriver: true,
       }).start();
-      
-      // Quick countdown
-      let count = 2;
+
+      // Quick countdown - ULTRA FAST
+      let count = 1; // ✅ FASTER: 1 second only
       const countdownInterval = setInterval(() => {
         count--;
         setCountdown(count);
-        
+
         if (count === 0) {
           clearInterval(countdownInterval);
           closeCountdownModal();
-          
-          // Show ad immediately
+
+          // Show ad immediately - INSTANT
           setTimeout(() => {
             showRewardedAd();
-          }, 200);
+          }, 100); // ✅ FASTER: 100ms instead of 200ms
         }
       }, 1000);
-      
+
       return;
     }
-    
+
     // Ad not ready, show loading message and load it
     console.log('⏳ Ad not ready, loading...');
     setIsAdLoading(true);
-    
-    // Show countdown modal with loading state
-    setCountdown(5);
+
+    // Show countdown modal with loading state - FASTER
+    setCountdown(2); // ✅ FASTER: 2 seconds instead of 3
     setShowCountdownModal(true);
     Animated.spring(countdownScaleAnim, {
       toValue: 1,
       friction: 5,
       useNativeDriver: true,
     }).start();
-    
+
     try {
       // Trigger ad load if not already loading
       if (!adStatus.isLoading) {
         console.log('🔄 Starting ad load...');
         adMobService.loadRewardedAd();
       }
-      
-      // Simple countdown - wait max 10 seconds for ad to load
-      let count = 5;
-      let totalWaitTime = 0;
-      const maxWaitTime = 10; // 10 seconds max wait
-      
+
+      // Improved countdown - checks ad status every 300ms - FASTER
+      let count = 2; // ✅ FASTER: Start with 2 seconds
+      let checkCount = 0;
+      const maxChecks = 30; // 9 seconds total (30 checks * 300ms)
+
       const countdownInterval = setInterval(() => {
-        // Check if ad is ready
+        checkCount++;
+
+        // Check if ad is ready every 500ms
         const currentStatus = adMobService.getAdStatus();
-        totalWaitTime++;
-        
+
         if (currentStatus.isReady) {
           console.log('✅ Ad loaded! Showing now...');
           clearInterval(countdownInterval);
           closeCountdownModal();
           setIsAdLoading(false);
-          
+
           setTimeout(() => {
             showRewardedAd();
-          }, 200);
+          }, 100); // ✅ FASTER: 100ms instead of 200ms
           return;
         }
-        
-        // Continue countdown
-        count--;
-        setCountdown(Math.max(count, 1)); // Never show 0, minimum 1
-        
+
+        // Update countdown faster (every 3 checks = ~900ms)
+        if (checkCount % 3 === 0) {
+          count--;
+
+          if (count > 0) {
+            setCountdown(count);
+          } else {
+            // After countdown finishes, show loading spinner
+            setCountdown(0); // 0 triggers loading spinner in UI
+            console.log(`⏳ Inapakia tangazo... (${Math.floor(checkCount / 2)}s)`);
+          }
+        }
+
         // Check if max wait time reached
-        if (totalWaitTime >= maxWaitTime) {
+        if (checkCount >= maxChecks) {
           console.log('❌ Ad failed to load in time');
           clearInterval(countdownInterval);
           closeCountdownModal();
@@ -214,15 +244,8 @@ const UserAccount = ({ navigation, route }) => {
           showErrorModal('Tangazo halipatikani kwa sasa. Tafadhali jaribu tena baadaye.');
           return;
         }
-        
-        // If countdown reaches 1, keep it at 1 while waiting
-        if (count <= 0) {
-          count = 1;
-          setCountdown(1);
-          console.log(`⏳ Still loading ad... (${totalWaitTime}/${maxWaitTime}s)`);
-        }
-      }, 1000);
-      
+      }, 300); // ✅ FASTER: Check every 300ms for ultra-fast response
+
     } catch (error) {
       console.error('❌ Error in ad flow:', error);
       closeCountdownModal();
@@ -233,16 +256,16 @@ const UserAccount = ({ navigation, route }) => {
 
   const showRewardedAd = async () => {
     console.log('🎬 Showing rewarded ad...');
-    
+
     try {
       const success = await adMobService.showRewardedAd(
         async (reward) => {
           // User earned reward
           console.log('🎉 User earned reward:', reward);
-          
+
           // Award points to user
           await addPoints(10, 'Tangazo');
-          
+
           // Record ad view in backend
           try {
             await apiService.post('/users/ads/view', {
@@ -253,9 +276,9 @@ const UserAccount = ({ navigation, route }) => {
           } catch (error) {
             console.error('Failed to record ad view:', error);
           }
-          
+
           setIsAdLoading(false);
-          
+
           // Show success modal
           setShowAdSuccessModal(true);
           Animated.spring(successScaleAnim, {
@@ -263,19 +286,19 @@ const UserAccount = ({ navigation, route }) => {
             friction: 5,
             useNativeDriver: true,
           }).start();
-          
-          // Preload next ad in background for instant availability
-          console.log('📦 Preloading next ad for instant availability...');
+
+          // Preload next ad in background for INSTANT availability - ULTRA FAST
+          console.log('📦 Preloading next ad IMMEDIATELY...');
           setTimeout(() => {
             adMobService.loadRewardedAd();
-          }, 1000);
+          }, 100); // ✅ ULTRA FAST: 100ms for instant next ad
         },
         (error) => {
           // Error showing ad
           console.error('❌ Ad show error:', error);
           setIsAdLoading(false);
           showErrorModal(error || 'Tangazo halipatikani kwa sasa. Tafadhali jaribu tena.');
-          
+
           // Try to reload ad for next attempt
           setTimeout(() => {
             console.log('🔄 Reloading ad after error...');
@@ -283,12 +306,12 @@ const UserAccount = ({ navigation, route }) => {
           }, 2000);
         }
       );
-      
+
       if (!success) {
         console.log('❌ Ad show returned false');
         setIsAdLoading(false);
         showErrorModal('Tangazo halipatikani kwa sasa. Tafadhali jaribu tena.');
-        
+
         // Try to reload ad
         setTimeout(() => {
           adMobService.forceReload();
@@ -298,7 +321,7 @@ const UserAccount = ({ navigation, route }) => {
       console.error('❌ Exception showing ad:', error);
       setIsAdLoading(false);
       showErrorModal('Imeshindikana kuonyesha tangazo. Tafadhali jaribu tena.');
-      
+
       // Try to reload ad
       setTimeout(() => {
         adMobService.forceReload();
@@ -357,14 +380,14 @@ const UserAccount = ({ navigation, route }) => {
 
   const openBottomSheet = async (sheetId) => {
     setActiveSheet(sheetId);
-    
+
     // Load data based on sheet type
     if (sheetId === 'history') {
       await loadWatchHistory();
     } else if (sheetId === 'points') {
       await loadPointsHistory();
     }
-    
+
     Animated.spring(slideAnim, {
       toValue: 1,
       useNativeDriver: true,
@@ -430,6 +453,74 @@ const UserAccount = ({ navigation, route }) => {
     }
   };
 
+  const handleNotificationSettings = async () => {
+    try {
+      // Check current permission status
+      const permissionGranted = await AsyncStorage.getItem('notificationPermissionGranted');
+      setNotificationsEnabled(permissionGranted === 'true');
+      setShowNotificationModal(true);
+    } catch (error) {
+      console.error('Error checking notification status:', error);
+      setNotificationsEnabled(false);
+      setShowNotificationModal(true);
+    }
+  };
+
+  const handleEnableNotifications = async () => {
+    try {
+      const granted = await requestNotificationPermission();
+
+      if (granted) {
+        setNotificationsEnabled(true);
+        setShowNotificationModal(false);
+        ToastAndroid.show('✅ Taarifa zimewashwa!', ToastAndroid.SHORT);
+      } else {
+        setShowNotificationModal(false);
+        Alert.alert(
+          '❌ Ruhusa Imekataliwa',
+          'Ili uwashe taarifa, nenda kwenye Mipangilio ya Simu > Apps > Supasoka > Taarifa na uwashe.',
+          [
+            { text: 'Sawa', style: 'cancel' },
+            {
+              text: 'Fungua Mipangilio',
+              onPress: () => Linking.openSettings(),
+            },
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Error enabling notifications:', error);
+      ToastAndroid.show('❌ Imeshindikana kuwasha taarifa', ToastAndroid.SHORT);
+    }
+  };
+
+  const handleDisableNotifications = async () => {
+    try {
+      await AsyncStorage.setItem('notificationPermissionGranted', 'false');
+      setNotificationsEnabled(false);
+      setShowNotificationModal(false);
+      ToastAndroid.show('🔕 Taarifa zimezimwa', ToastAndroid.SHORT);
+
+      // Guide user to system settings for complete disable
+      setTimeout(() => {
+        Alert.alert(
+          'Mipangilio ya Simu',
+          'Ili kuzima kabisa taarifa, nenda kwenye Mipangilio ya Simu > Apps > Supasoka > Taarifa na uzime.',
+          [
+            { text: 'Sawa', style: 'cancel' },
+            {
+              text: 'Fungua Mipangilio',
+              onPress: () => Linking.openSettings(),
+            },
+          ]
+        );
+      }, 500);
+    } catch (error) {
+      console.error('Error disabling notifications:', error);
+      ToastAndroid.show('❌ Imeshindikana kuzima taarifa', ToastAndroid.SHORT);
+    }
+  };
+
   const menuItems = [
     {
       id: 'subscription',
@@ -464,6 +555,14 @@ const UserAccount = ({ navigation, route }) => {
       onPress: () => openBottomSheet('support'),
     },
     {
+      id: 'notifications',
+      title: 'Taarifa',
+      subtitle: 'Washa au zima taarifa',
+      icon: 'bell',
+      color: '#f97316',
+      onPress: handleNotificationSettings,
+    },
+    {
       id: 'exit',
       title: 'Funga App',
       subtitle: 'Toka kwenye programu',
@@ -487,21 +586,21 @@ const UserAccount = ({ navigation, route }) => {
               <Icon name="account" size={50} color="#fff" />
             </LinearGradient>
           </View>
-          
+
           {/* Username */}
           <Text style={styles.username}>
             {isLoadingUser ? 'Inapakia...' : username}
           </Text>
-          
+
           {/* Premium/Free Badge */}
           <View style={[
             styles.statusBadge,
             isSubscribed ? styles.premiumBadge : styles.freeBadge
           ]}>
-            <Icon 
-              name={isSubscribed ? 'crown' : 'account-outline'} 
-              size={16} 
-              color="#fff" 
+            <Icon
+              name={isSubscribed ? 'crown' : 'account-outline'}
+              size={16}
+              color="#fff"
             />
             <Text style={styles.statusBadgeText}>
               {isSubscribed ? 'PREMIUM' : 'FREE'}
@@ -520,33 +619,40 @@ const UserAccount = ({ navigation, route }) => {
             <View style={styles.pointsIconWrapper}>
               <Icon name="star-circle" size={60} color="#fff" />
             </View>
-            
+
             <View style={styles.pointsInfo}>
               <Text style={styles.pointsLabel}>Points Zangu</Text>
               <Text style={styles.pointsValue}>{points}</Text>
               <Text style={styles.pointsHint}>
-                💡 50 points = Kituo 1
+                💡 120 pointi kwa Kituo 1
               </Text>
             </View>
           </View>
-          
+
           <TouchableOpacity
             style={styles.watchAdButton}
             onPress={handleWatchAd}
             disabled={isAdLoading}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
           >
             <LinearGradient
               colors={['rgba(255,255,255,0.25)', 'rgba(255,255,255,0.15)']}
               style={styles.watchAdButtonGradient}
             >
-              <Icon name="television-play" size={24} color="#fff" />
-              <Text style={styles.watchAdButtonText}>
-                {isAdLoading ? 'Inapakia Tangazo...' : 'Angalia Tangazo'}
-              </Text>
-              <View style={styles.pointsReward}>
-                <Text style={styles.pointsRewardText}>+10</Text>
-              </View>
+              {isAdLoading ? (
+                <>
+                  <ActivityIndicator size="small" color="#fff" />
+                  <Text style={styles.watchAdButtonText}>Inapakia...</Text>
+                </>
+              ) : (
+                <>
+                  <Icon name="television-play" size={24} color="#fff" />
+                  <Text style={styles.watchAdButtonText}>Angalia Tangazo</Text>
+                  <View style={styles.pointsReward}>
+                    <Text style={styles.pointsRewardText}>+10</Text>
+                  </View>
+                </>
+              )}
             </LinearGradient>
           </TouchableOpacity>
         </LinearGradient>
@@ -585,8 +691,8 @@ const UserAccount = ({ navigation, route }) => {
         animationType="fade"
         onRequestClose={closeBottomSheet}
       >
-        <TouchableOpacity 
-          style={styles.modalOverlay} 
+        <TouchableOpacity
+          style={styles.modalOverlay}
           activeOpacity={1}
           onPress={closeBottomSheet}
         >
@@ -647,6 +753,7 @@ const UserAccount = ({ navigation, route }) => {
         visible={showCountdownModal}
         transparent
         animationType="fade"
+        onRequestClose={closeCountdownModal}
       >
         <View style={styles.countdownModalOverlay}>
           <Animated.View
@@ -657,28 +764,40 @@ const UserAccount = ({ navigation, route }) => {
               },
             ]}
           >
-            {/* Countdown Number */}
-            <View style={styles.countdownCircle}>
-              <LinearGradient
-                colors={['#3b82f6', '#2563eb']}
-                style={styles.countdownGradient}
-              >
-                <Text style={styles.countdownNumber}>{countdown}</Text>
-              </LinearGradient>
-            </View>
+            <LinearGradient
+              colors={['#1e293b', '#0f172a']}
+              style={styles.countdownGradient}
+            >
+              {/* Icon */}
+              <View style={styles.countdownIconContainer}>
+                <LinearGradient
+                  colors={['#3b82f6', '#2563eb']}
+                  style={styles.countdownIconGradient}
+                >
+                  <Icon name="television-play" size={50} color="#fff" />
+                </LinearGradient>
+              </View>
 
-            {/* Message */}
-            <Text style={styles.countdownTitle}>Inapakia Tangazo...</Text>
-            <Text style={styles.countdownMessage}>
-              Tangazo litacheza ndani ya sekunde {countdown}
-            </Text>
+              {/* Title */}
+              <Text style={styles.countdownTitle}>Inaandaa Tangazo</Text>
 
-            {/* Loading Indicator */}
-            <View style={styles.loadingDots}>
-              <View style={[styles.dot, styles.dotActive]} />
-              <View style={[styles.dot, styles.dotActive]} />
-              <View style={[styles.dot, styles.dotActive]} />
-            </View>
+              {/* Countdown or Loading Spinner */}
+              {countdown > 0 ? (
+                <View style={styles.countdownCircle}>
+                  <Text style={styles.countdownNumber}>{countdown}</Text>
+                </View>
+              ) : (
+                <View style={styles.loadingSpinnerContainer}>
+                  <ActivityIndicator size="large" color="#3b82f6" />
+                  <Text style={styles.loadingSpinnerText}>Inapakia...</Text>
+                </View>
+              )}
+
+              {/* Message */}
+              <Text style={styles.countdownMessage}>
+                {countdown > 0 ? 'Tangazo litaanza hivi karibuni' : 'Tafadhali subiri kidogo...'}
+              </Text>
+            </LinearGradient>
           </Animated.View>
         </View>
       </Modal>
@@ -711,7 +830,7 @@ const UserAccount = ({ navigation, route }) => {
 
             {/* Title */}
             <Text style={styles.adSuccessTitle}>Hongera!</Text>
-            
+
             {/* Points Earned */}
             <View style={styles.pointsEarnedBox}>
               <Icon name="star" size={40} color="#f59e0b" />
@@ -782,7 +901,7 @@ const UserAccount = ({ navigation, route }) => {
 
             {/* Title */}
             <Text style={styles.adErrorTitle}>Samahani</Text>
-            
+
             {/* Message */}
             <Text style={styles.adErrorMessage}>
               {adErrorMessage}
@@ -826,6 +945,15 @@ const UserAccount = ({ navigation, route }) => {
           </Animated.View>
         </View>
       </Modal>
+
+      {/* Notification Toggle Modal */}
+      <NotificationToggleModal
+        visible={showNotificationModal}
+        onClose={() => setShowNotificationModal(false)}
+        onEnable={handleEnableNotifications}
+        onDisable={handleDisableNotifications}
+        isEnabled={notificationsEnabled}
+      />
     </SafeAreaView>
   );
 
@@ -840,6 +968,13 @@ const UserAccount = ({ navigation, route }) => {
             </View>
             {isSubscribed ? (
               <View style={styles.sheetBody}>
+                {/* Show admin access badge if granted by admin */}
+                {hasAdminAccess && (
+                  <View style={styles.adminAccessBadge}>
+                    <Icon name="shield-check" size={20} color="#10b981" />
+                    <Text style={styles.adminAccessText}>Umepewa na Msimamizi</Text>
+                  </View>
+                )}
                 <Text style={styles.sheetLabel}>Umebakiwa na:</Text>
                 <View style={styles.countdownContainer}>
                   <View style={styles.countdownItem}>
@@ -863,7 +998,10 @@ const UserAccount = ({ navigation, route }) => {
                   </View>
                 </View>
                 <Text style={styles.sheetHint}>
-                  Kama muda wa matumizi kutoka katika kifurushi chako
+                  {hasAdminAccess
+                    ? 'Muda wa ufikiaji uliopewa na msimamizi - vituo vyote vimefunguliwa!'
+                    : 'Kama muda wa matumizi kutoka katika kifurushi chako'
+                  }
                 </Text>
               </View>
             ) : (
@@ -1374,18 +1512,33 @@ const styles = {
     alignItems: 'center',
     padding: 40,
   },
-  countdownCircle: {
-    marginBottom: 30,
+  countdownIconContainer: {
+    marginBottom: 20,
   },
-  countdownGradient: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
+  countdownIconGradient: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  countdownCircle: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#374151',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  countdownGradient: {
+    borderRadius: 20,
+    padding: 30,
+    alignItems: 'center',
+    width: '100%',
+  },
   countdownNumber: {
-    fontSize: 80,
+    fontSize: 60,
     fontWeight: 'bold',
     color: '#fff',
   },
@@ -1394,12 +1547,24 @@ const styles = {
     fontWeight: 'bold',
     color: '#fff',
     marginBottom: 10,
+    textAlign: 'center',
   },
   countdownMessage: {
     fontSize: 16,
-    color: '#9ca3af',
+    color: '#cbd5e1',
     textAlign: 'center',
-    marginBottom: 30,
+    marginTop: 20,
+  },
+  loadingSpinnerContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 20,
+  },
+  loadingSpinnerText: {
+    fontSize: 16,
+    color: '#cbd5e1',
+    marginTop: 15,
+    fontWeight: '600',
   },
   loadingDots: {
     flexDirection: 'row',
@@ -1577,6 +1742,24 @@ const styles = {
   adErrorCloseText: {
     fontSize: 16,
     color: '#9ca3af',
+  },
+  // Admin Access Badge Styles
+  adminAccessBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginBottom: 20,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  adminAccessText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#10b981',
   },
 };
 

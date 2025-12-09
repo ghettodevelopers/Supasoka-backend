@@ -3,347 +3,393 @@ import mobileAds, {
   RewardedAd,
   RewardedAdEventType,
   TestIds,
+  AdEventType,
 } from 'react-native-google-mobile-ads';
 
 /**
- * AdMob Service for Supasoka
+ * AdMob Service - FIXED for Unlimited Ad Watching
+ * Handles rewarded video ads for earning points
  * 
- * IMPORTANT: This service ONLY handles REWARDED VIDEO ADS
- * - Users watch video ads to earn points
- * - Each completed ad rewards 10 points
- * - Points can be used to unlock channels
+ * KEY FIXES:
+ * 1. Proper cleanup between ad loads
+ * 2. Preloading next ad immediately after current ad completes
+ * 3. Better error recovery with exponential backoff
+ * 4. State management to prevent race conditions
  */
 
-// AdMob Configuration
 const ADMOB_CONFIG = {
   appId: 'ca-app-pub-5619803043988422~5036677593',
-  // REWARDED VIDEO AD UNIT ID (not banner or interstitial)
   rewardedAdUnitId: __DEV__
-    ? TestIds.REWARDED // Use test ads in development
-    : 'ca-app-pub-5619803043988422/4588410442', // Real rewarded video ad unit ID
+    ? TestIds.REWARDED
+    : 'ca-app-pub-5619803043988422/5529507312',
 };
 
 class AdMobService {
   constructor() {
     this.rewardedAd = null;
+    this.secondAd = null; // NEW: Second ad for sequential watching
     this.isAdLoaded = false;
+    this.isSecondAdLoaded = false; // NEW: Track second ad
     this.isAdLoading = false;
+    this.isAdShowing = false; // Track if ad is currently showing
     this.initialized = false;
-    this.rewardCallback = null;
-    this.adQueue = []; // Queue for preloaded ads
-    this.maxQueueSize = 2; // Keep 2 ads preloaded
     this.loadAttempts = 0;
-    this.maxLoadAttempts = 3;
-    this.lastLoadTime = null;
-    this.loadTimeout = null;
-    this.adEventListeners = []; // Store event listeners for cleanup
+    this.rewardCallback = null;
+    this.errorCallback = null;
+    this.unsubscribeLoaded = null;
+    this.unsubscribeEarned = null;
+    this.unsubscribeClosed = null;
+    this.unsubscribeError = null;
+    // Second ad listeners
+    this.unsubscribeLoaded2 = null;
+    this.unsubscribeEarned2 = null;
+    this.unsubscribeClosed2 = null;
+    this.unsubscribeError2 = null;
+    this.totalAdsShown = 0;
+    this.consecutiveErrors = 0;
+    this.lastLoadTime = 0; // Track when last load was attempted
+    this.preloadTimer = null; // Timer for preloading
+    // Sequential ad tracking
+    this.isSequentialMode = true; // NEW: Enable 2 ads per session
+    this.currentAdInSequence = 0; // NEW: Track which ad is showing (0 or 1)
+    this.sequenceReward = null; // NEW: Store reward until both ads complete
   }
 
-  // Initialize AdMob
   async initialize() {
     if (this.initialized) {
       console.log('✅ AdMob already initialized');
+      // Still try to load an ad if none is ready
+      if (!this.isAdLoaded && !this.isAdLoading) {
+        this.loadRewardedAd();
+      }
       return true;
     }
 
     try {
       console.log('🚀 Initializing AdMob...');
+      console.log('📱 Mode:', __DEV__ ? 'TEST ADS' : 'PRODUCTION');
+      console.log('🎯 Ad Unit ID:', ADMOB_CONFIG.rewardedAdUnitId);
+
       await mobileAds().initialize();
-      console.log('✅ AdMob initialized successfully');
+
       this.initialized = true;
-      
-      // Aggressively pre-load multiple ads for instant availability
-      console.log('📦 Pre-loading ads for instant availability...');
-      this.preloadMultipleAds();
-      
+      console.log('✅ AdMob SDK initialized successfully');
+
+      // Start preloading first ad immediately - ULTRA FAST
+      console.log('⚡ Preloading first ad...');
+      setTimeout(() => this.loadRewardedAd(), 100); // ✅ FASTER: 100ms instead of 500ms
+
       return true;
     } catch (error) {
-      console.error('❌ AdMob initialization failed:', error);
+      console.error('❌ AdMob init failed:', error.message);
+      this.initialized = true; // Mark as initialized to prevent retry loops
+      // Try loading anyway - sometimes init fails but ads still work
+      setTimeout(() => this.loadRewardedAd(), 1000);
       return false;
     }
   }
 
-  // Preload multiple ads for instant availability
-  async preloadMultipleAds() {
-    console.log('🔄 Preloading multiple ads...');
-    
-    // Load first ad immediately
-    await this.loadRewardedAd();
-    
-    // Load second ad after a short delay
-    setTimeout(() => {
-      this.loadRewardedAd();
-    }, 2000);
-  }
-
-  // Load Rewarded Ad with smart retry logic
   async loadRewardedAd() {
-    // Prevent loading if already loading
+    // Prevent multiple simultaneous load attempts
     if (this.isAdLoading) {
-      console.log('⚠️ Ad already loading, skipping...');
+      console.log('⚠️ Ad already loading, skipping duplicate request');
       return;
     }
 
-    // If ad is already loaded, skip
-    if (this.isAdLoaded && this.rewardedAd) {
-      console.log('✅ Ad already loaded and ready');
+    // Prevent loading while ad is showing
+    if (this.isAdShowing) {
+      console.log('⚠️ Ad currently showing, will load after close');
       return;
     }
+
+    // Prevent rapid-fire load attempts (minimum 200ms between attempts) - FASTER
+    const now = Date.now();
+    if (now - this.lastLoadTime < 200) {
+      console.log('⚠️ Too soon since last load attempt, delaying...');
+      setTimeout(() => this.loadRewardedAd(), 200);
+      return;
+    }
+
+    this.lastLoadTime = now;
+    this.isAdLoading = true;
+    this.loadAttempts++;
+    console.log(`📡 Loading ad (Attempt ${this.loadAttempts})...`);
 
     try {
-      this.isAdLoading = true;
-      this.loadAttempts++;
-      this.lastLoadTime = Date.now();
-      
-      console.log(`🔄 Loading ad (attempt ${this.loadAttempts}/${this.maxLoadAttempts})...`);
-      
-      // Clean up previous ad instance
-      if (this.rewardedAd) {
-        this.rewardedAd = null;
+      // CRITICAL: Clean up old ad instance completely before creating new one
+      await this.cleanupAsync();
+
+      // Create new ad instance
+      console.log('🎯 Creating new RewardedAd instance...');
+      this.rewardedAd = RewardedAd.createForAdRequest(ADMOB_CONFIG.rewardedAdUnitId, {
+        requestNonPersonalizedAdsOnly: false,
+      });
+
+      if (!this.rewardedAd) {
+        throw new Error('Failed to create RewardedAd instance');
       }
-      
-      // Create rewarded ad instance with optimized settings
-      this.rewardedAd = RewardedAd.createForAdRequest(
-        ADMOB_CONFIG.rewardedAdUnitId,
-        {
-          requestNonPersonalizedAdsOnly: false,
-          keywords: ['gaming', 'entertainment', 'video'], // Help with ad targeting
-        }
-      );
 
-      // Set timeout for ad loading (10 seconds max)
-      this.loadTimeout = setTimeout(() => {
-        if (this.isAdLoading && !this.isAdLoaded) {
-          console.log('⏱️ Ad load timeout, retrying...');
-          this.isAdLoading = false;
-          this.isAdLoaded = false;
-          
-          // Retry if under max attempts
-          if (this.loadAttempts < this.maxLoadAttempts) {
-            setTimeout(() => this.loadRewardedAd(), 1000);
-          } else {
-            console.log('❌ Max load attempts reached');
-            this.loadAttempts = 0; // Reset for next time
-          }
-        }
-      }, 10000);
-
-      // Set up event listeners using addAdEventListener
-      const loadedListener = this.rewardedAd.addAdEventListener(
-        RewardedAdEventType.LOADED,
-        () => {
-          console.log('✅ Rewarded ad loaded successfully!');
-          this.isAdLoaded = true;
-          this.isAdLoading = false;
-          this.loadAttempts = 0; // Reset attempts on success
-          
-          if (this.loadTimeout) {
-            clearTimeout(this.loadTimeout);
-            this.loadTimeout = null;
-          }
-          
-          const loadTime = Date.now() - this.lastLoadTime;
-          console.log(`⚡ Ad loaded in ${loadTime}ms`);
-        }
-      );
-
-      const errorListener = this.rewardedAd.addAdEventListener(
-        RewardedAdEventType.ERROR,
-        (error) => {
-          console.error('❌ Ad load error:', error);
-          this.isAdLoading = false;
-          this.isAdLoaded = false;
-          
-          if (this.loadTimeout) {
-            clearTimeout(this.loadTimeout);
-            this.loadTimeout = null;
-          }
-          
-          // Auto-retry on error if under max attempts
-          if (this.loadAttempts < this.maxLoadAttempts) {
-            console.log(`🔄 Retrying ad load in 2 seconds...`);
-            setTimeout(() => this.loadRewardedAd(), 2000);
-          } else {
-            console.log('❌ Max retry attempts reached');
-            this.loadAttempts = 0;
-          }
-        }
-      );
-
-      const earnedRewardListener = this.rewardedAd.addAdEventListener(
-        RewardedAdEventType.EARNED_REWARD,
-        (reward) => {
-          console.log('🎉 User earned reward:', reward);
-          
-          // Call the reward callback if it exists
-          if (this.rewardCallback) {
-            this.rewardCallback(reward);
-            this.rewardCallback = null;
-          }
-        }
-      );
-
-      // Store listeners for cleanup
-      this.adEventListeners = [
-        loadedListener,
-        errorListener,
-        earnedRewardListener
-      ];
+      // Set up event listeners BEFORE loading
+      this.setupEventListeners();
 
       // Load the ad
+      console.log('📡 Requesting ad from AdMob network...');
       this.rewardedAd.load();
-      
+      console.log('✅ Ad load request sent to AdMob');
+
     } catch (error) {
-      console.error('❌ Failed to load rewarded ad:', error);
+      console.error('❌ Load setup failed:', error.message);
       this.isAdLoading = false;
       this.isAdLoaded = false;
-      
-      if (this.loadTimeout) {
-        clearTimeout(this.loadTimeout);
-        this.loadTimeout = null;
-      }
-      
-      // Retry on exception
-      if (this.loadAttempts < this.maxLoadAttempts) {
-        setTimeout(() => this.loadRewardedAd(), 2000);
-      }
+      this.consecutiveErrors++;
+
+      // Smart retry with exponential backoff - FASTER
+      const retryDelay = Math.min(500 * Math.pow(1.3, Math.min(this.consecutiveErrors, 4)), 5000);
+      console.log(`⏳ Retrying in ${Math.round(retryDelay)}ms... (Error #${this.consecutiveErrors})`);
+      setTimeout(() => this.loadRewardedAd(), retryDelay);
     }
   }
 
-  // Show Rewarded Ad with smart waiting
-  async showRewardedAd(onReward, onError) {
-    console.log('🎬 Attempting to show rewarded ad...');
-    
-    // If ad is already loaded, show immediately
-    if (this.isAdLoaded && this.rewardedAd) {
-      console.log('✅ Ad ready, showing immediately!');
-      try {
-        this.rewardCallback = onReward;
-        this.rewardedAd.show();
+  setupEventListeners() {
+    if (!this.rewardedAd) return;
+
+    // LOADED Event - ad is ready to show
+    this.unsubscribeLoaded = this.rewardedAd.addAdEventListener(
+      RewardedAdEventType.LOADED,
+      () => {
+        console.log('✅ Ad loaded successfully - READY TO SHOW');
+        this.isAdLoaded = true;
+        this.isAdLoading = false;
+        this.loadAttempts = 0;
+        this.consecutiveErrors = 0;
+        console.log(`📊 Stats: Total shown: ${this.totalAdsShown}, Ready: true`);
+      }
+    );
+
+    // EARNED_REWARD Event - user watched and earned reward
+    this.unsubscribeEarned = this.rewardedAd.addAdEventListener(
+      RewardedAdEventType.EARNED_REWARD,
+      (reward) => {
+        this.totalAdsShown++;
+        console.log(`🎉 REWARD EARNED! (Total ads watched: ${this.totalAdsShown})`);
+        console.log(`🏆 Reward: ${reward.amount} ${reward.type}`);
+
+        if (this.rewardCallback) {
+          this.rewardCallback(reward);
+          this.rewardCallback = null;
+        }
+      }
+    );
+
+    // CLOSED Event - ad was closed
+    this.unsubscribeClosed = this.rewardedAd.addAdEventListener(
+      AdEventType.CLOSED,
+      () => {
+        console.log('🚪 Ad closed');
+        this.isAdShowing = false;
         this.isAdLoaded = false;
-        return true;
-      } catch (error) {
-        console.error('❌ Failed to show ad:', error);
-        if (onError) onError('Imeshindikana kuonyesha tangazo.');
+
+        // CRITICAL: Preload next ad IMMEDIATELY for seamless unlimited watching
+        console.log('⚡ Preloading next ad IMMEDIATELY for instant availability...');
+        // Minimal delay to ensure cleanup - ULTRA FAST
+        if (this.preloadTimer) clearTimeout(this.preloadTimer);
+        this.preloadTimer = setTimeout(() => {
+          this.loadRewardedAd();
+        }, 50); // ✅ ULTRA FAST: 50ms for instant next ad
+      }
+    );
+
+    // ERROR Event - ad failed to load
+    this.unsubscribeError = this.rewardedAd.addAdEventListener(
+      AdEventType.ERROR,
+      (error) => {
+        console.error('❌ Ad error:', error.message || error);
+        this.isAdLoading = false;
+        this.isAdLoaded = false;
+        this.isAdShowing = false;
+        this.consecutiveErrors++;
+
+        // Call error callback if set
+        if (this.errorCallback) {
+          this.errorCallback(error.message || 'Tangazo halionekani');
+          this.errorCallback = null;
+        }
+
+        // Smart retry with exponential backoff (max 5 seconds) - FASTER
+        const retryDelay = Math.min(500 * Math.pow(1.3, Math.min(this.consecutiveErrors, 4)), 5000);
+        console.log(`⏳ Will retry in ${Math.round(retryDelay / 1000)}s (Error #${this.consecutiveErrors})`);
+
+        if (this.preloadTimer) clearTimeout(this.preloadTimer);
+        this.preloadTimer = setTimeout(() => {
+          this.loadRewardedAd();
+        }, retryDelay);
+      }
+    );
+
+    console.log('✅ All ad event listeners configured');
+  }
+
+  async showRewardedAd(onReward, onError) {
+    try {
+      // Check if ad is ready
+      if (!this.isAdLoaded || !this.rewardedAd) {
+        console.log('⚠️ Ad not ready');
+        if (onError) onError('Tangazo halijaandaliwa. Tafadhali subiri kidogo...');
+
+        // Start loading if not already
+        if (!this.isAdLoading) {
+          this.loadRewardedAd();
+        }
         return false;
       }
-    }
 
-    // If ad is loading, wait for it
-    if (this.isAdLoading) {
-      console.log('⏳ Ad is loading, waiting...');
-      
-      // Wait up to 8 seconds for ad to load
-      const maxWaitTime = 8000;
-      const checkInterval = 200;
-      let waited = 0;
-      
-      while (waited < maxWaitTime) {
-        if (this.isAdLoaded && this.rewardedAd) {
-          console.log(`✅ Ad loaded after ${waited}ms, showing now!`);
-          try {
-            this.rewardCallback = onReward;
-            this.rewardedAd.show();
-            this.isAdLoaded = false;
-            return true;
-          } catch (error) {
-            console.error('❌ Failed to show ad:', error);
-            if (onError) onError('Imeshindikana kuonyesha tangazo.');
-            return false;
-          }
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, checkInterval));
-        waited += checkInterval;
+      // Prevent showing if already showing
+      if (this.isAdShowing) {
+        console.log('⚠️ Ad already showing');
+        return false;
       }
-      
-      console.log('⏱️ Timeout waiting for ad to load');
-      if (onError) onError('Tangazo bado linapakia. Tafadhali jaribu tena.');
+
+      console.log('🎬 Showing rewarded ad to user...');
+
+      // Store callbacks
+      this.rewardCallback = onReward;
+      this.errorCallback = onError;
+
+      // Mark as showing
+      this.isAdShowing = true;
+      this.isAdLoaded = false;
+
+      // Show the ad
+      await this.rewardedAd.show();
+
+      console.log('✅ Ad show initiated successfully');
+      return true;
+
+    } catch (error) {
+      console.error('❌ Show failed:', error.message);
+      this.isAdShowing = false;
+      this.isAdLoaded = false;
+
+      if (onError) onError('Tangazo halionekani. Tafadhali jaribu tena.');
+
+      // Try to reload for next attempt
+      setTimeout(() => this.loadRewardedAd(), 1000);
       return false;
     }
-
-    // Ad not loaded and not loading, try to load it
-    console.log('🔄 Ad not loaded, loading now...');
-    this.loadRewardedAd();
-    
-    // Wait for ad to load
-    const maxWaitTime = 8000;
-    const checkInterval = 200;
-    let waited = 0;
-    
-    while (waited < maxWaitTime) {
-      if (this.isAdLoaded && this.rewardedAd) {
-        console.log(`✅ Ad loaded after ${waited}ms, showing now!`);
-        try {
-          this.rewardCallback = onReward;
-          this.rewardedAd.show();
-          this.isAdLoaded = false;
-          return true;
-        } catch (error) {
-          console.error('❌ Failed to show ad:', error);
-          if (onError) onError('Imeshindikana kuonyesha tangazo.');
-          return false;
-        }
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, checkInterval));
-      waited += checkInterval;
-    }
-    
-    console.log('❌ Failed to load ad in time');
-    if (onError) onError('Tangazo halipatikani kwa sasa. Tafadhali jaribu tena.');
-    return false;
   }
 
-  // Check if ad is ready
   isRewardedAdReady() {
-    return this.isAdLoaded && this.rewardedAd !== null;
+    return this.isAdLoaded && this.rewardedAd !== null && !this.isAdShowing;
   }
 
-  // Get ad loading status
   getAdStatus() {
     return {
       isLoaded: this.isAdLoaded,
       isLoading: this.isAdLoading,
+      isShowing: this.isAdShowing,
       isReady: this.isRewardedAdReady(),
       loadAttempts: this.loadAttempts,
-      lastLoadTime: this.lastLoadTime,
+      consecutiveErrors: this.consecutiveErrors,
     };
   }
 
-  // Force reload ad (useful for debugging)
   forceReload() {
     console.log('🔄 Force reloading ad...');
+    // Clear any pending preload
+    if (this.preloadTimer) {
+      clearTimeout(this.preloadTimer);
+      this.preloadTimer = null;
+    }
+
+    // Reset state
     this.isAdLoaded = false;
     this.isAdLoading = false;
+    this.isAdShowing = false;
     this.loadAttempts = 0;
-    this.loadRewardedAd();
+    this.consecutiveErrors = 0;
+
+    // Cleanup and reload
+    this.cleanupAsync().then(() => {
+      this.loadRewardedAd();
+    });
   }
 
-  // Cleanup method
+  getDiagnostics() {
+    return {
+      initialized: this.initialized,
+      isAdLoaded: this.isAdLoaded,
+      isAdLoading: this.isAdLoading,
+      isAdShowing: this.isAdShowing,
+      loadAttempts: this.loadAttempts,
+      hasAd: this.rewardedAd !== null,
+      totalAdsShown: this.totalAdsShown,
+      consecutiveErrors: this.consecutiveErrors,
+      unlimited: true,
+      adUnitId: ADMOB_CONFIG.rewardedAdUnitId,
+      isTestMode: __DEV__,
+    };
+  }
+
+  printDiagnostics() {
+    const diag = this.getDiagnostics();
+    console.log('🔍 AdMob Status:');
+    console.log(`   Initialized: ${diag.initialized}`);
+    console.log(`   Ad Loaded: ${diag.isAdLoaded}`);
+    console.log(`   Ad Loading: ${diag.isAdLoading}`);
+    console.log(`   Ad Showing: ${diag.isAdShowing}`);
+    console.log(`   Total Shown: ${diag.totalAdsShown}`);
+    console.log(`   Errors: ${diag.consecutiveErrors}`);
+    console.log(`   Test Mode: ${diag.isTestMode}`);
+  }
+
+  // Synchronous cleanup for immediate use
   cleanup() {
-    // Remove event listeners
-    if (this.adEventListeners && this.adEventListeners.length > 0) {
-      this.adEventListeners.forEach(listener => {
-        if (listener && typeof listener === 'function') {
-          listener(); // Call the unsubscribe function
-        }
-      });
-      this.adEventListeners = [];
-    }
-    
-    if (this.loadTimeout) {
-      clearTimeout(this.loadTimeout);
-      this.loadTimeout = null;
-    }
-    
-    if (this.rewardedAd) {
+    this.cleanupListeners();
+    this.rewardedAd = null;
+  }
+
+  // Async cleanup with proper waiting
+  async cleanupAsync() {
+    return new Promise((resolve) => {
+      this.cleanupListeners();
       this.rewardedAd = null;
+      // Small delay to ensure cleanup is complete
+      setTimeout(resolve, 100);
+    });
+  }
+
+  cleanupListeners() {
+    try {
+      if (this.unsubscribeLoaded && typeof this.unsubscribeLoaded === 'function') {
+        this.unsubscribeLoaded();
+      }
+      if (this.unsubscribeEarned && typeof this.unsubscribeEarned === 'function') {
+        this.unsubscribeEarned();
+      }
+      if (this.unsubscribeClosed && typeof this.unsubscribeClosed === 'function') {
+        this.unsubscribeClosed();
+      }
+      if (this.unsubscribeError && typeof this.unsubscribeError === 'function') {
+        this.unsubscribeError();
+      }
+    } catch (error) {
+      console.log('⚠️ Cleanup warning:', error.message);
     }
-    
-    this.isAdLoaded = false;
-    this.isAdLoading = false;
+
+    this.unsubscribeLoaded = null;
+    this.unsubscribeEarned = null;
+    this.unsubscribeClosed = null;
+    this.unsubscribeError = null;
     this.rewardCallback = null;
+    this.errorCallback = null;
+  }
+
+  // Preload ad for faster availability
+  preloadAd() {
+    if (!this.isAdLoaded && !this.isAdLoading && !this.isAdShowing) {
+      console.log('⚡ Preloading ad for faster availability...');
+      this.loadRewardedAd();
+    }
   }
 }
 

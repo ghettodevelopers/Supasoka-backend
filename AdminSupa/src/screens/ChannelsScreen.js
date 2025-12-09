@@ -177,20 +177,41 @@ const ChannelsScreen = ({ route }) => {
 
   const openEditModal = (channel) => {
     setEditingChannel(channel);
-    const hasDRM = channel.drmConfig && channel.drmConfig.clearKey;
+    // Parse drmConfig if it's a string
+    let parsedDrmConfig = channel.drmConfig;
+    if (typeof channel.drmConfig === 'string') {
+      try {
+        parsedDrmConfig = JSON.parse(channel.drmConfig);
+      } catch (e) {
+        console.log('Failed to parse drmConfig, setting to null');
+        parsedDrmConfig = null;
+      }
+    }
+    
+    // Check if DRM is enabled: drmConfig exists and has clearKey
+    const hasDRM = !!(parsedDrmConfig && parsedDrmConfig.clearKey);
+    const clearKey = hasDRM ? parsedDrmConfig.clearKey : '';
+    
+    console.log('📝 Opening edit modal for channel:', {
+      name: channel.name,
+      hasDRM,
+      clearKey: clearKey ? '***' + clearKey.slice(-4) : 'none',
+      drmConfig: parsedDrmConfig
+    });
+    
     setFormData({
       name: channel.name,
       category: channel.category,
       logo: channel.logo || '',
       streamUrl: channel.streamUrl,
       description: channel.description || '',
-      color: Array.isArray(channel.color) ? channel.color : ['#6366F1', '#8B5CF6'],
+      color: channel.color || ['#6366F1', '#8B5CF6'],
       hd: channel.hd,
       isActive: channel.isActive,
       priority: channel.priority || 0,
-      drmConfig: channel.drmConfig,
+      drmConfig: parsedDrmConfig,
       hasDRM: hasDRM,
-      clearKey: hasDRM ? channel.drmConfig.clearKey : '',
+      clearKey: clearKey,
       isFree: channel.isFree || false,
     });
     setModalVisible(true);
@@ -221,21 +242,37 @@ const ChannelsScreen = ({ route }) => {
 
     setSaving(true);
     try {
+      // Build channel data with proper DRM handling
       const channelData = {
         name: formData.name.trim(),
         category: formData.category,
-        logo: formData.logo.trim(),
+        logo: formData.logo.trim() || null,
         streamUrl: formData.streamUrl.trim(),
-        description: formData.description.trim(),
+        description: formData.description.trim() || null,
         color: formData.color,
         hd: formData.hd,
         isActive: formData.isActive,
         priority: parseInt(formData.priority) || 0,
         isFree: formData.isFree,
-        drmConfig: formData.hasDRM
-          ? { clearKey: formData.clearKey.trim() }
-          : null,
+        drmEnabled: formData.hasDRM,
       };
+
+      // Handle DRM config properly based on toggle state
+      if (formData.hasDRM && formData.clearKey.trim()) {
+        // DRM is ON and clearKey is provided - save it
+        channelData.drmConfig = {
+          clearKey: formData.clearKey.trim()
+        };
+      } else {
+        // DRM is OFF or no clearKey - explicitly set to null
+        channelData.drmConfig = null;
+      }
+
+      console.log('💾 Saving channel with DRM config:', {
+        hasDRM: formData.hasDRM,
+        drmConfig: channelData.drmConfig,
+        channelName: channelData.name
+      });
 
       if (editingChannel) {
         await channelService.updateChannel(editingChannel.id, channelData);
@@ -250,7 +287,19 @@ const ChannelsScreen = ({ route }) => {
       await loadChannels();
     } catch (error) {
       console.error('Save error:', error);
-      const errorMessage = error.response?.data?.error || error.message || 'Failed to save channel';
+      console.error('Error response:', error.response?.data);
+      console.error('Error status:', error.response?.status);
+      
+      let errorMessage = 'Failed to save channel';
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.response?.data?.errors) {
+        // Validation errors
+        errorMessage = error.response.data.errors.map(e => e.msg).join(', ');
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       Alert.alert('❌ Error', errorMessage);
     } finally {
       setSaving(false);
@@ -569,9 +618,14 @@ const ChannelsScreen = ({ route }) => {
                 <Text style={styles.label}>DRM Protected</Text>
                 <Switch
                   value={formData.hasDRM}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, hasDRM: value })
-                  }
+                  onValueChange={(value) => {
+                    // When turning OFF DRM, clear the clearKey
+                    if (!value) {
+                      setFormData({ ...formData, hasDRM: value, clearKey: '' });
+                    } else {
+                      setFormData({ ...formData, hasDRM: value });
+                    }
+                  }}
                   trackColor={{ false: '#334155', true: '#6366F1' }}
                   thumbColor={formData.hasDRM ? '#FFFFFF' : '#94A3B8'}
                 />
@@ -579,16 +633,21 @@ const ChannelsScreen = ({ route }) => {
 
               {formData.hasDRM && (
                 <>
-                  <Text style={styles.label}>ClearKey</Text>
+                  <Text style={styles.label}>ClearKey *</Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="Enter DRM ClearKey"
+                    placeholder="Enter DRM ClearKey (required when DRM is ON)"
                     placeholderTextColor="#64748B"
                     value={formData.clearKey}
                     onChangeText={(text) =>
                       setFormData({ ...formData, clearKey: text })
                     }
+                    autoCapitalize="none"
+                    autoCorrect={false}
                   />
+                  <Text style={styles.helperText}>
+                    💡 Enter the ClearKey for DRM-protected content. Leave empty and toggle OFF to disable DRM.
+                  </Text>
                 </>
               )}
 
@@ -1197,6 +1256,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#10B981',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  helperText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 6,
+    marginBottom: 12,
+    lineHeight: 16,
+    fontStyle: 'italic',
   },
 });
 

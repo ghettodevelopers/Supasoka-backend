@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,8 +12,11 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import io from 'socket.io-client';
 import userService from '../services/userService';
 import CustomModal from '../components/CustomModal';
+
+const SOCKET_URL = 'https://supasoka-backend.onrender.com';
 
 const UsersScreen = () => {
   const [users, setUsers] = useState([]);
@@ -26,7 +29,9 @@ const UsersScreen = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [grantAccessModal, setGrantAccessModal] = useState(false);
   const [timeInput, setTimeInput] = useState({ days: '0', hours: '0', minutes: '0' });
-  
+  const socketRef = useRef(null);
+  const countdownRef = useRef(null);
+
   // Custom modal states
   const [customModal, setCustomModal] = useState({
     visible: false,
@@ -35,6 +40,130 @@ const UsersScreen = () => {
     message: '',
     buttons: [],
   });
+
+  // Setup socket connection for real-time updates
+  useEffect(() => {
+    const socket = io(SOCKET_URL, {
+      transports: ['websocket'],
+      reconnection: true,
+    });
+
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      console.log('✅ Admin socket connected');
+      socket.emit('join-admin');
+    });
+
+    // Listen for user activation updates
+    socket.on('user-activated', (data) => {
+      console.log('📡 User activated:', data);
+      // Update user in list with new remaining time
+      setUsers(prevUsers =>
+        prevUsers.map(user =>
+          user.uniqueUserId === data.user?.uniqueUserId
+            ? { ...user, ...data.user, remainingTime: data.remainingTime }
+            : user
+        )
+      );
+    });
+
+    // Listen for user updates
+    socket.on('user-updated', (data) => {
+      console.log('📡 User updated:', data);
+      setUsers(prevUsers =>
+        prevUsers.map(user =>
+          user.id === data.userId
+            ? { ...user, ...data.user }
+            : user
+        )
+      );
+    });
+
+    // Listen for subscription updates from admin grant
+    socket.on('user-subscription-updated', (data) => {
+      console.log('📡 User subscription updated:', data);
+      setUsers(prevUsers =>
+        prevUsers.map(user =>
+          user.id === data.userId
+            ? {
+              ...user,
+              ...data.user,
+              subscriptionEnd: data.user.subscriptionEnd,
+              subscriptionEndTime: data.user.subscriptionEndTime,
+              remainingTime: data.user.remainingTime,
+              isSubscribed: data.user.isSubscribed
+            }
+            : user
+        )
+      );
+    });
+
+    return () => {
+      if (socket) {
+        socket.disconnect();
+      }
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+      }
+    };
+  }, []);
+
+  // Real-time countdown for remaining time - calculates from subscriptionEnd timestamp
+  // This ensures countdown persists correctly across app refreshes
+  useEffect(() => {
+    // Calculate remaining time from subscriptionEnd timestamp
+    const calculateRemainingTime = (user) => {
+      // If user has subscriptionEnd, calculate remaining time from it
+      if (user.subscriptionEnd || user.accessExpiresAt) {
+        const endTime = new Date(user.subscriptionEnd || user.accessExpiresAt).getTime();
+        const now = Date.now();
+        const remainingMs = endTime - now;
+
+        if (remainingMs <= 0) {
+          return 0;
+        }
+
+        // Convert to minutes (with decimal for seconds precision)
+        return remainingMs / (60 * 1000);
+      }
+
+      // Fallback to stored remainingTime if no end timestamp
+      return user.remainingTime || 0;
+    };
+
+    // Update remaining time every second for real-time countdown
+    countdownRef.current = setInterval(() => {
+      setUsers(prevUsers =>
+        prevUsers.map(user => {
+          // Calculate actual remaining time from subscriptionEnd
+          const calculatedTime = calculateRemainingTime(user);
+
+          // If time just expired, update status
+          if (calculatedTime <= 0 && (user.remainingTime > 0 || user.isSubscribed)) {
+            return {
+              ...user,
+              remainingTime: 0,
+              isSubscribed: false
+            };
+          }
+
+          // Only update if there's a meaningful change
+          if (calculatedTime > 0) {
+            return { ...user, remainingTime: calculatedTime };
+          }
+
+          return user;
+        })
+      );
+    }, 1000); // Update every second for smooth countdown
+
+    return () => {
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     loadUsers();
@@ -51,10 +180,10 @@ const UsersScreen = () => {
       setUsers(data.users || []);
     } catch (error) {
       console.error('Failed to load users:', error);
-      
+
       // Check if it's a 503 error (backend not deployed)
       const is503 = error.response?.status === 503 || error.message?.includes('503');
-      
+
       showCustomModal({
         type: is503 ? 'warning' : 'error',
         title: is503 ? '⚠️ Backend Not Deployed' : '❌ Connection Error',
@@ -121,9 +250,25 @@ const UsersScreen = () => {
     const hours = parseInt(timeInput.hours) || 0;
     const minutes = parseInt(timeInput.minutes) || 0;
 
-    const totalMinutes = (days * 24 * 60) + (hours * 60) + minutes;
+    // Calculate total time and determine best unit
+    let duration, unit;
+    
+    if (days > 0 && hours === 0 && minutes === 0) {
+      duration = days;
+      unit = 'days';
+    } else if (days === 0 && hours > 0 && minutes === 0) {
+      duration = hours;
+      unit = 'hours';
+    } else if (days === 0 && hours === 0 && minutes > 0) {
+      duration = minutes;
+      unit = 'minutes';
+    } else {
+      // Mixed time - convert to minutes
+      duration = (days * 24 * 60) + (hours * 60) + minutes;
+      unit = 'minutes';
+    }
 
-    if (totalMinutes <= 0) {
+    if (duration <= 0) {
       showCustomModal({
         type: 'warning',
         title: 'Invalid Time',
@@ -133,12 +278,13 @@ const UsersScreen = () => {
     }
 
     try {
-      await userService.activateUser(selectedUser.uniqueUserId, {
-        days,
-        hours,
-        minutes,
-        accessLevel: 'premium',
-      });
+      // Use the new grant subscription endpoint with user.id instead of uniqueUserId
+      await userService.grantSubscription(
+        selectedUser.id,
+        duration,
+        unit,
+        'Admin granted access'
+      );
 
       setGrantAccessModal(false);
       await loadUsers();
@@ -146,7 +292,7 @@ const UsersScreen = () => {
       showCustomModal({
         type: 'success',
         title: 'Access Granted!',
-        message: `Successfully granted ${days}d ${hours}h ${minutes}m to ${selectedUser.uniqueUserId}`,
+        message: `Successfully granted ${days}d ${hours}h ${minutes}m to ${selectedUser.uniqueUserId}. All channels unlocked!`,
       });
     } catch (error) {
       showCustomModal({
@@ -192,12 +338,34 @@ const UsersScreen = () => {
     });
   };
 
+  // Format remaining time with dynamic display including seconds
   const formatTime = (minutes) => {
-    if (!minutes || minutes <= 0) return 'Expired';
-    const days = Math.floor(minutes / (24 * 60));
-    const hours = Math.floor((minutes % (24 * 60)) / 60);
-    const mins = minutes % 60;
-    return `${days}d ${hours}h ${mins}m`;
+    if (!minutes || minutes <= 0) return 'Muda Umeisha';
+
+    // Convert to total seconds for more precise display
+    const totalSeconds = Math.floor(minutes * 60);
+    const days = Math.floor(totalSeconds / (24 * 60 * 60));
+    const hours = Math.floor((totalSeconds % (24 * 60 * 60)) / (60 * 60));
+    const mins = Math.floor((totalSeconds % (60 * 60)) / 60);
+    const secs = totalSeconds % 60;
+
+    if (days > 0) {
+      return `${days}d ${hours}h ${mins}m`;
+    } else if (hours > 0) {
+      return `${hours}h ${mins}m ${secs}s`;
+    } else if (mins > 0) {
+      return `${mins}m ${secs}s`;
+    } else {
+      return `${secs}s`;
+    }
+  };
+
+  // Get time color based on remaining time
+  const getTimeColor = (minutes) => {
+    if (!minutes || minutes <= 0) return '#EF4444'; // Red - expired
+    if (minutes < 60) return '#F59E0B'; // Orange - less than 1 hour
+    if (minutes < 24 * 60) return '#FBBF24'; // Yellow - less than 1 day
+    return '#10B981'; // Green - more than 1 day
   };
 
   const renderUserItem = ({ item }) => (
@@ -232,11 +400,17 @@ const UsersScreen = () => {
       </View>
 
       <View style={styles.userStats}>
-        <View style={styles.statItem}>
-          <Ionicons name="time-outline" size={16} color="#94A3B8" />
-          <Text style={styles.statText}>
+        <View style={[styles.statItem, styles.timeStatItem]}>
+          <Ionicons name="time-outline" size={16} color={getTimeColor(item.remainingTime)} />
+          <Text style={[styles.statText, { color: getTimeColor(item.remainingTime), fontWeight: '600' }]}>
             {formatTime(item.remainingTime)}
           </Text>
+          {item.remainingTime > 0 && (
+            <View style={styles.liveIndicatorContainer}>
+              <View style={[styles.liveIndicator, { backgroundColor: getTimeColor(item.remainingTime) }]} />
+              <Text style={styles.liveText}>LIVE</Text>
+            </View>
+          )}
         </View>
         <View style={styles.statItem}>
           <Ionicons name="calendar-outline" size={16} color="#94A3B8" />
@@ -385,7 +559,7 @@ const UsersScreen = () => {
               <Text style={styles.modalValue}>{selectedUser?.uniqueUserId}</Text>
 
               <Text style={styles.modalLabel}>Grant Access Time</Text>
-              
+
               <View style={styles.timeInputContainer}>
                 <View style={styles.timeInputGroup}>
                   <Text style={styles.timeLabel}>Days</Text>
@@ -617,6 +791,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+  },
+  timeStatItem: {
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  liveIndicatorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 6,
+  },
+  liveIndicator: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  liveText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#10B981',
+    marginLeft: 3,
   },
   statText: {
     fontSize: 13,

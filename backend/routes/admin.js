@@ -49,7 +49,7 @@ router.get('/profile', authMiddleware, adminOnly, async (req, res) => {
     res.json({ admin });
   } catch (error) {
     logger.error('Error fetching admin profile:', error);
-    
+
     // Fallback for hardcoded admin if database fails
     if (req.admin && req.admin.id === 1) {
       return res.json({
@@ -63,7 +63,7 @@ router.get('/profile', authMiddleware, adminOnly, async (req, res) => {
         }
       });
     }
-    
+
     res.status(500).json({ error: 'Failed to fetch profile' });
   }
 });
@@ -84,7 +84,7 @@ router.put('/profile',
       }
 
       const { name, email } = req.body;
-      
+
       const admin = await prisma.admin.update({
         where: { id: req.admin.id },
         data: {
@@ -149,8 +149,8 @@ router.post('/notifications/send-realtime',
         logger.info(`Real-time notification broadcast by ${req.admin.email}`);
       }
 
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         message: 'Notification sent successfully',
         notification: notificationData
       });
@@ -196,11 +196,11 @@ router.post('/users/grant-access',
 
       // Send to specific user
       io.to(`user-${userId}`).emit('access-granted', accessData);
-      
+
       logger.info(`Access granted to user ${userId} by ${req.admin.email}`);
 
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         message: 'Access granted successfully',
         accessData
       });
@@ -218,7 +218,7 @@ router.post('/carousel/notify-update',
   async (req, res) => {
     try {
       const io = req.app.get('io');
-      
+
       const updateData = {
         id: Date.now().toString(),
         message: 'Picha za carousel zimebadilishwa',
@@ -228,11 +228,11 @@ router.post('/carousel/notify-update',
 
       // Broadcast carousel update
       io.emit('carousel-updated', updateData);
-      
+
       logger.info(`Carousel update notification sent by ${req.admin.email}`);
 
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         message: 'Carousel update notification sent'
       });
     } catch (error) {
@@ -258,7 +258,7 @@ router.put('/change-password',
       }
 
       const { currentPassword, newPassword } = req.body;
-      
+
       const admin = await prisma.admin.findUnique({
         where: { id: req.admin.id }
       });
@@ -268,7 +268,7 @@ router.put('/change-password',
       }
 
       const hashedPassword = await bcrypt.hash(newPassword, 12);
-      
+
       await prisma.admin.update({
         where: { id: req.admin.id },
         data: { password: hashedPassword }
@@ -360,86 +360,6 @@ router.post('/create',
   }
 );
 
-// Get free trial settings (Enhanced with seconds) - MOVED BEFORE :id route
-router.get('/free-trial', authMiddleware, adminOnly, async (req, res) => {
-  try {
-    const setting = await prisma.appSettings.findUnique({
-      where: { key: 'free_trial_seconds' }
-    });
-
-    const freeTrialSeconds = setting ? parseInt(setting.value) : 15; // Default 15 seconds
-    
-    res.json({
-      freeTrialSeconds,
-      freeTrialDays: Math.floor(freeTrialSeconds / (24 * 60 * 60)),
-      freeTrialHours: Math.floor((freeTrialSeconds % (24 * 60 * 60)) / (60 * 60)),
-      freeTrialMinutes: Math.floor((freeTrialSeconds % (60 * 60)) / 60),
-      freeTrialSecs: freeTrialSeconds % 60
-    });
-  } catch (error) {
-    logger.error('Error fetching free trial settings:', error);
-    res.status(500).json({ error: 'Failed to fetch free trial settings' });
-  }
-});
-
-// Update free trial settings (Enhanced with seconds) - MOVED BEFORE :id route
-router.put('/free-trial', authMiddleware, adminOnly, async (req, res) => {
-  try {
-    const { days = 0, hours = 0, minutes = 0, seconds = 0, totalSeconds } = req.body;
-    console.log('✅ Free trial update received:', { days, hours, minutes, seconds, totalSeconds });
-    
-    let freeTrialSeconds;
-    if (totalSeconds) {
-      freeTrialSeconds = totalSeconds;
-    } else {
-      freeTrialSeconds = (parseInt(days) * 24 * 60 * 60) + 
-                        (parseInt(hours) * 60 * 60) + 
-                        (parseInt(minutes) * 60) + 
-                        parseInt(seconds);
-    }
-
-    if (freeTrialSeconds <= 0) {
-      return res.status(400).json({ error: 'Free trial time must be greater than 0' });
-    }
-
-    const setting = await prisma.appSettings.upsert({
-      where: { key: 'free_trial_seconds' },
-      update: {
-        value: freeTrialSeconds.toString(),
-        description: `Free trial duration: ${Math.floor(freeTrialSeconds / (24 * 60 * 60))}d ${Math.floor((freeTrialSeconds % (24 * 60 * 60)) / (60 * 60))}h ${Math.floor((freeTrialSeconds % (60 * 60)) / 60)}m ${freeTrialSeconds % 60}s`,
-        updatedBy: req.admin.email
-      },
-      create: {
-        key: 'free_trial_seconds',
-        value: freeTrialSeconds.toString(),
-        description: `Free trial duration: ${Math.floor(freeTrialSeconds / (24 * 60 * 60))}d ${Math.floor((freeTrialSeconds % (24 * 60 * 60)) / (60 * 60))}h ${Math.floor((freeTrialSeconds % (60 * 60)) / 60)}m ${freeTrialSeconds % 60}s`,
-        updatedBy: req.admin.email
-      }
-    });
-
-    // Emit setting change to admin dashboard
-    const io = req.app.get('io');
-    io.to('admin-room').emit('free-trial-updated', { 
-      freeTrialSeconds,
-      updatedBy: req.admin.email
-    });
-
-    logger.info(`✅ Free trial updated: ${freeTrialSeconds} seconds by ${req.admin.email}`);
-    res.json({ 
-      setting,
-      freeTrialSeconds,
-      freeTrialDays: Math.floor(freeTrialSeconds / (24 * 60 * 60)),
-      freeTrialHours: Math.floor((freeTrialSeconds % (24 * 60 * 60)) / (60 * 60)),
-      freeTrialMinutes: Math.floor((freeTrialSeconds % (60 * 60)) / 60),
-      freeTrialSecs: freeTrialSeconds % 60,
-      message: `Free trial updated to ${Math.floor(freeTrialSeconds / (24 * 60 * 60))}d ${Math.floor((freeTrialSeconds % (24 * 60 * 60)) / (60 * 60))}h ${Math.floor((freeTrialSeconds % (60 * 60)) / 60)}m ${freeTrialSeconds % 60}s`
-    });
-  } catch (error) {
-    logger.error('Error updating free trial settings:', error);
-    console.error('Detailed error:', error);
-    res.status(500).json({ error: 'Failed to update free trial settings', details: error.message });
-  }
-});
 
 // Get app settings
 router.get('/settings', authMiddleware, adminOnly, async (req, res) => {
@@ -653,7 +573,7 @@ router.get('/contact-settings/public', async (req, res) => {
       }
     });
 
-    res.json({ 
+    res.json({
       contactSettings: contactSettings || {
         whatsappNumber: null,
         callNumber: null,
@@ -674,7 +594,7 @@ router.get('/contact-settings', async (req, res) => {
       orderBy: { updatedAt: 'desc' }
     });
 
-    res.json({ 
+    res.json({
       contactSettings: contactSettings || {
         whatsappNumber: null,
         callNumber: null,
@@ -699,9 +619,9 @@ router.post('/contact-settings/initialize',
       });
 
       if (existing) {
-        return res.json({ 
+        return res.json({
           message: 'Contact settings already initialized',
-          contactSettings: existing 
+          contactSettings: existing
         });
       }
 
@@ -717,15 +637,15 @@ router.post('/contact-settings/initialize',
       });
 
       logger.info('Contact settings initialized successfully');
-      res.json({ 
+      res.json({
         message: 'Contact settings initialized successfully',
-        contactSettings 
+        contactSettings
       });
     } catch (error) {
       logger.error('Error initializing contact settings:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to initialize contact settings',
-        details: error.message 
+        details: error.message
       });
     }
   }
@@ -745,9 +665,9 @@ router.put('/contact-settings',
       // Validate request
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ 
-          error: 'Validation failed', 
-          details: errors.array() 
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: errors.array()
         });
       }
 
@@ -801,23 +721,23 @@ router.put('/contact-settings',
       logger.error('Error updating contact settings:', error);
       logger.error('Error stack:', error.stack);
       logger.error('Error code:', error.code);
-      
+
       // Check for specific Prisma errors
       if (error.code === 'P2002') {
-        return res.status(409).json({ 
+        return res.status(409).json({
           error: 'Contact settings already exist',
-          details: 'Duplicate entry detected' 
-        });
-      }
-      
-      if (error.code === 'P2025') {
-        return res.status(404).json({ 
-          error: 'Contact settings not found',
-          details: 'The settings record does not exist' 
+          details: 'Duplicate entry detected'
         });
       }
 
-      res.status(500).json({ 
+      if (error.code === 'P2025') {
+        return res.status(404).json({
+          error: 'Contact settings not found',
+          details: 'The settings record does not exist'
+        });
+      }
+
+      res.status(500).json({
         error: 'Failed to update contact settings',
         details: error.message,
         code: error.code || 'UNKNOWN'
@@ -900,7 +820,7 @@ router.get('/users', authMiddleware, adminOnly, async (req, res) => {
     });
   } catch (error) {
     logger.error('Error fetching users:', error);
-    
+
     // If database unavailable, return empty array
     logger.info('Database unavailable - returning empty users array');
     res.json({
@@ -997,9 +917,9 @@ router.put('/users/:userId',
         blockReason: user.blockReason,
         timestamp: new Date().toISOString()
       };
-      
+
       io.to(`user-${userId}`).emit('account-updated', updatePayload);
-      
+
       // Also broadcast to all admin clients
       io.to('admin-room').emit('user-updated', {
         userId,
@@ -1064,8 +984,9 @@ router.post('/users/:userId/grant-subscription',
       }
 
       const subscriptionEnd = new Date(Date.now() + timeInMinutes * 60 * 1000);
+      const accessExpiresAt = subscriptionEnd; // Use same timestamp for access expiration
 
-      // Update user subscription
+      // Update user subscription with timestamp-based expiration
       const user = await prisma.user.update({
         where: { id: userId },
         data: {
@@ -1073,7 +994,11 @@ router.post('/users/:userId/grant-subscription',
           isActivated: true,
           remainingTime: timeInMinutes,
           subscriptionEnd,
-          subscriptionType: 'admin_granted'
+          accessExpiresAt, // Set access expiration timestamp
+          accessLevel: 'premium', // Grant premium access
+          subscriptionType: 'admin_granted',
+          activatedAt: new Date(),
+          activatedBy: req.admin.email
         }
       });
 
@@ -1101,17 +1026,29 @@ router.post('/users/:userId/grant-subscription',
         });
       }
 
-      // Send real-time notification
+      // Send real-time notification with subscriptionEndTime for accurate countdown
       const io = req.app.get('io');
+      const subscriptionEndTime = subscriptionEnd.getTime(); // Timestamp in milliseconds
+      const accessExpiresAtTime = accessExpiresAt.getTime();
+
+      // Emit to user app with timestamp for persistent countdown
       io.to(`user-${userId}`).emit('subscription-granted', {
         duration,
         unit,
         timeInMinutes,
         subscriptionEnd,
+        subscriptionEndTime, // Add timestamp for real-time countdown
+        accessExpiresAt,
+        accessExpiresAtTime, // Timestamp for access expiration
+        remainingTime: timeInMinutes,
+        isSubscribed: true,
+        accessLevel: 'premium',
+        allChannelsUnlocked: true, // Flag to unlock all channels
         reason,
-        message: `Umepewa muda wa ${duration} ${unit} wa kutazama!`
+        message: `Umepewa muda wa ${duration} ${unit} wa kutazama vituo vyote!`
       });
 
+      // Emit notification to user
       io.to(`user-${userId}`).emit('notification', {
         id: notification?.id,
         title: 'Umepewa Muda wa Kutazama! 🎉',
@@ -1119,6 +1056,29 @@ router.post('/users/:userId/grant-subscription',
         type: 'promotion',
         priority: 'high',
         createdAt: new Date()
+      });
+
+      // Broadcast to admin room for real-time dashboard updates with full user data
+      io.to('admin-room').emit('user-subscription-updated', {
+        userId,
+        user: {
+          id: user.id,
+          uniqueUserId: user.uniqueUserId,
+          deviceId: user.deviceId,
+          isSubscribed: true,
+          isActivated: true,
+          remainingTime: timeInMinutes,
+          subscriptionEnd,
+          subscriptionEndTime,
+          accessExpiresAt,
+          accessExpiresAtTime,
+          accessLevel: 'premium',
+          subscriptionType: 'admin_granted',
+          activatedAt: user.activatedAt,
+          activatedBy: req.admin.email
+        },
+        grantedBy: req.admin.email,
+        timestamp: new Date().toISOString()
       });
 
       // Log audit action
@@ -1140,7 +1100,7 @@ router.post('/users/:userId/grant-subscription',
       });
 
       logger.info(`Subscription granted to user ${userId} by ${req.admin.email}: ${duration} ${unit}`);
-      res.json({ 
+      res.json({
         success: true,
         user,
         subscription: {
@@ -1154,6 +1114,79 @@ router.post('/users/:userId/grant-subscription',
     } catch (error) {
       logger.error('Error granting subscription:', error);
       res.status(500).json({ error: 'Failed to grant subscription' });
+    }
+  }
+);
+
+// Background service to check and expire subscriptions
+// This endpoint can be called periodically by a cron job or manually
+router.post('/subscriptions/check-expired',
+  authMiddleware,
+  adminOnly,
+  async (req, res) => {
+    try {
+      const now = new Date();
+      
+      // Find all users with expired subscriptions
+      const expiredUsers = await prisma.user.findMany({
+        where: {
+          OR: [
+            {
+              AND: [
+                { subscriptionEnd: { lte: now } },
+                { isSubscribed: true }
+              ]
+            },
+            {
+              AND: [
+                { accessExpiresAt: { lte: now } },
+                { isActivated: true }
+              ]
+            }
+          ]
+        }
+      });
+
+      let updatedCount = 0;
+      const io = req.app.get('io');
+
+      // Update each expired user
+      for (const user of expiredUsers) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            isSubscribed: false,
+            isActivated: false,
+            remainingTime: 0,
+            accessLevel: 'basic'
+          }
+        });
+
+        // Notify user about expiration
+        io.to(`user-${user.id}`).emit('subscription-expired', {
+          message: 'Muda wako wa kutazama umeisha. Tafadhali lipia ili kuendelea.',
+          expiredAt: now.toISOString()
+        });
+
+        // Notify admin room
+        io.to('admin-room').emit('user-subscription-expired', {
+          userId: user.id,
+          uniqueUserId: user.uniqueUserId,
+          expiredAt: now.toISOString()
+        });
+
+        updatedCount++;
+      }
+
+      logger.info(`Checked and expired ${updatedCount} subscriptions`);
+      res.json({
+        success: true,
+        expiredCount: updatedCount,
+        message: `${updatedCount} subscriptions expired`
+      });
+    } catch (error) {
+      logger.error('Error checking expired subscriptions:', error);
+      res.status(500).json({ error: 'Failed to check expired subscriptions' });
     }
   }
 );
@@ -1221,10 +1254,10 @@ router.put('/channels/:channelId/featured',
         }
       });
       io.emit('channel-updated', { channel: updatedChannel });
-      io.emit('channels-updated', { 
+      io.emit('channels-updated', {
         message: `Kituo "${updatedChannel.name}" kimebadilishwa`,
         action: 'updated',
-        channel: updatedChannel 
+        channel: updatedChannel
       });
 
       logger.info(`Channel ${channelId} featured status updated by ${req.admin.email}`);
@@ -1277,7 +1310,7 @@ router.post('/notifications/send-realtime',
         });
 
         userNotifications = await Promise.all(
-          users.map(user => 
+          users.map(user =>
             prisma.userNotification.create({
               data: {
                 userId: user.id,
@@ -1287,17 +1320,23 @@ router.post('/notifications/send-realtime',
           )
         );
 
-        // Emit to specific users
+        // Emit to specific users with multiple event types for compatibility
         const io = req.app.get('io');
+        const notificationPayload = {
+          id: notification.id,
+          title,
+          message,
+          type,
+          priority,
+          createdAt: notification.createdAt,
+          timestamp: new Date().toISOString()
+        };
+        
         users.forEach(user => {
-          io.to(`user-${user.id}`).emit('notification', {
-            id: notification.id,
-            title,
-            message,
-            type,
-            priority,
-            createdAt: notification.createdAt
-          });
+          // Emit multiple events to ensure notification is received
+          io.to(`user-${user.id}`).emit('notification', notificationPayload);
+          io.to(`user-${user.id}`).emit('immediate-notification', notificationPayload);
+          io.to(`user-${user.id}`).emit('new-notification', notificationPayload);
         });
       } else {
         // Send to all users
@@ -1307,7 +1346,7 @@ router.post('/notifications/send-realtime',
         });
 
         userNotifications = await Promise.all(
-          allUsers.map(user => 
+          allUsers.map(user =>
             prisma.userNotification.create({
               data: {
                 userId: user.id,
@@ -1317,23 +1356,29 @@ router.post('/notifications/send-realtime',
           )
         );
 
-        // Emit to all connected users
+        // Emit to all connected users with multiple event types for compatibility
         const io = req.app.get('io');
-        io.emit('notification', {
+        const notificationPayload = {
           id: notification.id,
           title,
           message,
           type,
           priority,
-          createdAt: notification.createdAt
-        });
+          createdAt: notification.createdAt,
+          timestamp: new Date().toISOString()
+        };
+        
+        // Emit multiple events to ensure notification is received by all users
+        io.emit('notification', notificationPayload);
+        io.emit('immediate-notification', notificationPayload);
+        io.emit('new-notification', notificationPayload);
       }
 
       logger.info(`Real-time notification sent by ${req.admin.email}: ${title}`);
-      res.json({ 
-        notification, 
+      res.json({
+        notification,
         sentTo: userNotifications.length,
-        message: `Notification sent to ${userNotifications.length} users` 
+        message: `Notification sent to ${userNotifications.length} users`
       });
     } catch (error) {
       logger.error('Error sending real-time notification:', error);
@@ -1358,8 +1403,7 @@ router.get('/stats', authMiddleware, adminOnly, async (req, res) => {
       todayNewUsers,
       liveChannels,
       recentActivity,
-      topChannels,
-      freeTrialSetting
+      topChannels
     ] = await Promise.all([
       // User stats
       prisma.user.count(),
@@ -1371,18 +1415,18 @@ router.get('/stats', authMiddleware, adminOnly, async (req, res) => {
         }
       }),
       prisma.user.count({ where: { isSubscribed: true } }),
-      
+
       // Channel stats
       prisma.channel.count(),
       prisma.channel.count({ where: { isActive: true } }),
       prisma.channel.count({ where: { isFeatured: true, isActive: true } }),
-      
+
       // Notification stats
       prisma.notification.count(),
-      
+
       // View stats (total watch history count)
       prisma.watchHistory.count(),
-      
+
       // Today's views
       prisma.watchHistory.count({
         where: {
@@ -1391,7 +1435,7 @@ router.get('/stats', authMiddleware, adminOnly, async (req, res) => {
           }
         }
       }),
-      
+
       // Today's new users
       prisma.user.count({
         where: {
@@ -1400,7 +1444,7 @@ router.get('/stats', authMiddleware, adminOnly, async (req, res) => {
           }
         }
       }),
-      
+
       // Live channels (active channels with recent views)
       prisma.channel.findMany({
         where: {
@@ -1433,7 +1477,7 @@ router.get('/stats', authMiddleware, adminOnly, async (req, res) => {
           }
         }
       }),
-      
+
       // Recent activity
       prisma.watchHistory.findMany({
         take: 10,
@@ -1447,7 +1491,7 @@ router.get('/stats', authMiddleware, adminOnly, async (req, res) => {
           }
         }
       }),
-      
+
       // Top channels by views
       prisma.channel.findMany({
         where: { isActive: true },
@@ -1462,11 +1506,6 @@ router.get('/stats', authMiddleware, adminOnly, async (req, res) => {
           }
         },
         take: 5
-      }),
-      
-      // Free trial setting
-      prisma.appSettings.findUnique({
-        where: { key: 'free_trial_seconds' }
       })
     ]);
 
@@ -1483,9 +1522,7 @@ router.get('/stats', authMiddleware, adminOnly, async (req, res) => {
         todayViews,
         todayNewUsers,
         liveChannelsCount: liveChannels.length,
-        subscriptionRate: totalUsers > 0 ? ((subscribedUsers / totalUsers) * 100).toFixed(1) : 0,
-        freeTrialSeconds: freeTrialSetting ? parseInt(freeTrialSetting.value) : 15,
-        freeTrialMinutes: freeTrialSetting ? Math.floor(parseInt(freeTrialSetting.value) / 60) : 0
+        subscriptionRate: totalUsers > 0 ? ((subscribedUsers / totalUsers) * 100).toFixed(1) : 0
       },
       liveChannels: liveChannels.map(channel => ({
         id: channel.id,
@@ -1512,7 +1549,7 @@ router.get('/stats', authMiddleware, adminOnly, async (req, res) => {
     });
   } catch (error) {
     logger.error('Error fetching system stats:', error);
-    
+
     // If database is not available, return mock data for development
     logger.info('Database unavailable - returning mock stats for development');
     res.json({
@@ -1564,17 +1601,17 @@ router.post('/channels/drm/preprocess', async (req, res) => {
     // Validate hex format
     const validateAndFormatHex = (value) => {
       if (!value) return null;
-      
+
       // Remove any non-hex characters
       let cleaned = value.replace(/[^0-9a-fA-F]/g, '');
-      
+
       // Ensure proper length (32 characters for 128-bit key)
       if (cleaned.length < 32) {
         cleaned = cleaned.padEnd(32, '0');
       } else if (cleaned.length > 32) {
         cleaned = cleaned.substring(0, 32);
       }
-      
+
       return cleaned.toLowerCase();
     };
 
@@ -1608,9 +1645,9 @@ router.post('/channels/drm/preprocess', async (req, res) => {
 
   } catch (error) {
     console.error('DRM preprocessing error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to process DRM configuration',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -1665,11 +1702,11 @@ router.get('/payment-requests', authMiddleware, adminOnly, async (req, res) => {
 router.get('/payment-stats', authMiddleware, adminOnly, async (req, res) => {
   try {
     const { period = '7d' } = req.query;
-    
+
     // Calculate date range
     const now = new Date();
     let startDate;
-    
+
     switch (period) {
       case '24h':
         startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -1697,25 +1734,25 @@ router.get('/payment-stats', authMiddleware, adminOnly, async (req, res) => {
         where: { createdAt: { gte: startDate } }
       }),
       prisma.paymentRequest.count({
-        where: { 
+        where: {
           createdAt: { gte: startDate },
           status: 'completed'
         }
       }),
       prisma.paymentRequest.count({
-        where: { 
+        where: {
           createdAt: { gte: startDate },
           status: 'failed'
         }
       }),
       prisma.paymentRequest.count({
-        where: { 
+        where: {
           createdAt: { gte: startDate },
           status: 'pending'
         }
       }),
       prisma.paymentRequest.aggregate({
-        where: { 
+        where: {
           createdAt: { gte: startDate },
           status: 'completed'
         },
@@ -1754,8 +1791,8 @@ router.get('/payment-stats', authMiddleware, adminOnly, async (req, res) => {
 });
 
 // Update payment status (manual override)
-router.patch('/payment-requests/:transactionId/status', 
-  authMiddleware, 
+router.patch('/payment-requests/:transactionId/status',
+  authMiddleware,
   adminOnly,
   [
     body('status').isIn(['pending', 'processing', 'completed', 'failed', 'cancelled'])
@@ -1926,14 +1963,14 @@ router.get('/audit-logs',
   adminOnly,
   async (req, res) => {
     try {
-      const { 
-        adminId, 
-        action, 
-        entityType, 
-        startDate, 
-        endDate, 
-        page = 1, 
-        limit = 50 
+      const {
+        adminId,
+        action,
+        entityType,
+        startDate,
+        endDate,
+        page = 1,
+        limit = 50
       } = req.query;
 
       const result = await auditLogService.getAuditLogs({
@@ -1976,10 +2013,10 @@ router.post('/user-joined', async (req, res) => {
       logger.info(`User joined notification sent to admin: ${username}`);
     }
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: 'User join notification sent',
-      username 
+      username
     });
   } catch (error) {
     logger.error('Error processing user join:', error);
@@ -2043,7 +2080,7 @@ router.delete('/:id',
       }
 
       const adminId = req.params.id;
-      
+
       if (adminId === req.admin.id) {
         return res.status(400).json({ error: 'Cannot delete your own account' });
       }

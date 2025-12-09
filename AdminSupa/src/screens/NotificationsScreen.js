@@ -271,7 +271,7 @@ const NotificationsScreen = () => {
       <View style={styles.infoBox}>
         <Ionicons name="information-circle" size={20} color="#3B82F6" />
         <Text style={styles.infoText}>
-          Send push notifications to all users. They will receive it in their status bar and notification center.
+          ujumbe huu utapokelewa na watumiaji woe wa supasoka app mwaisa.
         </Text>
       </View>
 

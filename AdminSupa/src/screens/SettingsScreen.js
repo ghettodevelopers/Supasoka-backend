@@ -17,14 +17,6 @@ const SettingsScreen = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   
-  // Free Trial Settings
-  const [freeTrialTime, setFreeTrialTime] = useState({
-    days: '0',
-    hours: '0',
-    minutes: '0',
-    seconds: '0',
-  });
-
   // Contact Settings
   const [contactSettings, setContactSettings] = useState({
     whatsappNumber: '',
@@ -55,19 +47,7 @@ const SettingsScreen = () => {
   const loadSettings = async () => {
     try {
       setLoading(true);
-      const [freeTrialData, contactData] = await Promise.all([
-        settingsService.getFreeTrialSettings(),
-        settingsService.getContactSettings(),
-      ]);
-
-      if (freeTrialData) {
-        setFreeTrialTime({
-          days: (freeTrialData.freeTrialDays || 0).toString(),
-          hours: (freeTrialData.freeTrialHours || 0).toString(),
-          minutes: (freeTrialData.freeTrialMins || 0).toString(),
-          seconds: (freeTrialData.freeTrialSecs || 0).toString(),
-        });
-      }
+      const contactData = await settingsService.getContactSettings();
 
       if (contactData?.contactSettings) {
         setContactSettings({
@@ -100,48 +80,6 @@ const SettingsScreen = () => {
 
   const hideCustomModal = () => {
     setCustomModal({ ...customModal, visible: false });
-  };
-
-  const handleSaveFreeTrialSettings = async () => {
-    const days = parseInt(freeTrialTime.days) || 0;
-    const hours = parseInt(freeTrialTime.hours) || 0;
-    const minutes = parseInt(freeTrialTime.minutes) || 0;
-    const seconds = parseInt(freeTrialTime.seconds) || 0;
-
-    const totalSeconds = (days * 24 * 60 * 60) + (hours * 60 * 60) + (minutes * 60) + seconds;
-
-    if (totalSeconds <= 0) {
-      showCustomModal({
-        type: 'warning',
-        title: 'Invalid Time',
-        message: 'Please enter a valid free trial duration.',
-      });
-      return;
-    }
-
-    setSaving(true);
-    try {
-      await settingsService.updateFreeTrialSettings({
-        days,
-        hours,
-        minutes,
-        seconds,
-      });
-
-      showCustomModal({
-        type: 'success',
-        title: 'Settings Saved!',
-        message: `Free trial updated to ${days}d ${hours}h ${minutes}m ${seconds}s`,
-      });
-    } catch (error) {
-      showCustomModal({
-        type: 'error',
-        title: 'Error',
-        message: error.response?.data?.error || 'Failed to save settings',
-      });
-    } finally {
-      setSaving(false);
-    }
   };
 
   const handleSaveContactSettings = async () => {
@@ -193,87 +131,6 @@ const SettingsScreen = () => {
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Settings</Text>
           <Text style={styles.headerSubtitle}>Badili settings za app </Text>
-        </View>
-
-        {/* Free Trial Settings */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="time" size={24} color="#6366F1" />
-            <Text style={styles.sectionTitle}>Free Trial Duration</Text>
-          </View>
-          <Text style={styles.sectionDescription}>
-            Muda wa majaribio kwa mtumiaji mpya
-          </Text>
-
-          <View style={styles.timeInputContainer}>
-            <View style={styles.timeInputGroup}>
-              <Text style={styles.timeLabel}>Siku</Text>
-              <TextInput
-                style={styles.timeInput}
-                value={freeTrialTime.days}
-                onChangeText={(text) =>
-                  setFreeTrialTime({ ...freeTrialTime, days: text })
-                }
-                keyboardType="numeric"
-                placeholder="0"
-                placeholderTextColor="#64748B"
-              />
-            </View>
-            <View style={styles.timeInputGroup}>
-              <Text style={styles.timeLabel}>Masaa</Text>
-              <TextInput
-                style={styles.timeInput}
-                value={freeTrialTime.hours}
-                onChangeText={(text) =>
-                  setFreeTrialTime({ ...freeTrialTime, hours: text })
-                }
-                keyboardType="numeric"
-                placeholder="0"
-                placeholderTextColor="#64748B"
-              />
-            </View>
-            <View style={styles.timeInputGroup}>
-              <Text style={styles.timeLabel}>Dakika</Text>
-              <TextInput
-                style={styles.timeInput}
-                value={freeTrialTime.minutes}
-                onChangeText={(text) =>
-                  setFreeTrialTime({ ...freeTrialTime, minutes: text })
-                }
-                keyboardType="numeric"
-                placeholder="0"
-                placeholderTextColor="#64748B"
-              />
-            </View>
-            <View style={styles.timeInputGroup}>
-              <Text style={styles.timeLabel}>Sekunde</Text>
-              <TextInput
-                style={styles.timeInput}
-                value={freeTrialTime.seconds}
-                onChangeText={(text) =>
-                  setFreeTrialTime({ ...freeTrialTime, seconds: text })
-                }
-                keyboardType="numeric"
-                placeholder="0"
-                placeholderTextColor="#64748B"
-              />
-            </View>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-            onPress={handleSaveFreeTrialSettings}
-            disabled={saving}
-          >
-            {saving ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <>
-                <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-                <Text style={styles.saveButtonText}>Save Free Trial time</Text>
-              </>
-            )}
-          </TouchableOpacity>
         </View>
 
         {/* Contact Settings */}
