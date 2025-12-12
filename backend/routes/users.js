@@ -8,6 +8,40 @@ const channelAccessService = require('../services/channelAccessService');
 const router = express.Router();
 const prisma = new PrismaClient();
 
+// Register device token for push notifications
+router.post('/device-token', authMiddleware, async (req, res) => {
+  try {
+    const { deviceToken } = req.body;
+
+    if (!deviceToken) {
+      return res.status(400).json({ error: 'Device token is required' });
+    }
+
+    // Update user with device token
+    const user = await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        deviceToken: deviceToken,
+        lastActive: new Date()
+      }
+    });
+
+    logger.info(`Device token registered for user ${req.user.id}: ${deviceToken.substring(0, 20)}...`);
+
+    res.json({ 
+      success: true, 
+      message: 'Device token registered successfully',
+      user: {
+        id: user.id,
+        deviceToken: user.deviceToken
+      }
+    });
+  } catch (error) {
+    logger.error('Error registering device token:', error);
+    res.status(500).json({ error: 'Failed to register device token' });
+  }
+});
+
 // Update last active timestamp
 router.patch('/last-active', authMiddleware, async (req, res) => {
   try {

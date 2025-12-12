@@ -9,6 +9,7 @@ import AppNavigator from './navigation/AppNavigator';
 import userService from './services/userService';
 import timeCheckerService from './services/timeCheckerService';
 import adMobService from './services/adMobService';
+import pushyService from './services/pushyService';
 
 const App = () => {
   const [isInitializing, setIsInitializing] = useState(true);
@@ -39,6 +40,16 @@ const App = () => {
         console.log('🆕 New user registered:', user.uniqueUserId);
       } else {
         console.log('👤 Existing user loaded:', user.uniqueUserId);
+      }
+
+      // Initialize Pushy for push notifications
+      try {
+        console.log('🔔 Initializing push notifications...');
+        await pushyService.initialize();
+        console.log('✅ Push notifications ready');
+      } catch (pushyError) {
+        console.warn('⚠️ Push notifications failed to initialize:', pushyError.message);
+        // Continue app initialization even if Pushy fails
       }
 
       // Start time monitoring for access control

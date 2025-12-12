@@ -28,10 +28,15 @@ export const NotificationProvider = ({ children }) => {
     loadNotifications();
     connectSocket();
 
+    // Expose showNotification globally for Pushy service
+    global.showNotification = showNotification;
+
     return () => {
       if (socketRef.current) {
         socketRef.current.disconnect();
       }
+      // Clean up global reference
+      delete global.showNotification;
     };
   }, []);
 
@@ -162,21 +167,7 @@ export const NotificationProvider = ({ children }) => {
     });
 
     console.log('✅ Push notifications configured for status bar display');
-    
-    // Test notification to verify system is working
-    setTimeout(() => {
-      console.log('🧪 Testing notification system...');
-      PushNotification.localNotification({
-        channelId: 'supasoka-high-priority',
-        title: 'Supasoka Iko Tayari!',
-        message: 'Taarifa zitaonyeshwa hapa. Karibu!',
-        playSound: true,
-        vibrate: true,
-        priority: 'max',
-        importance: 'high',
-      });
-      console.log('✅ Test notification sent');
-    }, 3000); // Send test notification 3 seconds after app starts
+    // Test notification removed - only show real admin notifications
   };
 
   // Handle notification tap - navigate to appropriate screen
@@ -253,11 +244,20 @@ export const NotificationProvider = ({ children }) => {
     // Listen for channel updates
     socket.on('channels-updated', (data) => {
       console.log('📡 Channels updated:', data);
-      showNotification({
+      const notification = {
+        id: Date.now().toString(),
         title: 'Vituo Vimebadilishwa',
         message: 'Vituo vipya vimeongezwa au kubadilishwa',
         type: 'channel_update',
-      });
+        timestamp: new Date().toISOString(),
+        read: false
+      };
+      
+      // Show in status bar
+      showNotification(notification);
+      
+      // Add to notifications list
+      addNotification(notification);
 
       // Trigger global refresh if function exists
       if (global.refreshChannels) {
@@ -300,11 +300,20 @@ export const NotificationProvider = ({ children }) => {
     // Listen for admin messages
     socket.on('admin-message', (data) => {
       console.log('📡 Admin message:', data);
-      showNotification({
+      const notification = {
+        id: data.id || Date.now().toString(),
         title: data.title || 'Ujumbe wa Msimamizi',
         message: data.message || 'Una ujumbe mpya',
         type: 'admin_message',
-      });
+        timestamp: data.timestamp || new Date().toISOString(),
+        read: false
+      };
+      
+      // Show in status bar
+      showNotification(notification);
+      
+      // Add to notifications list
+      addNotification(notification);
     });
 
     // Listen for immediate notifications from admin
@@ -328,11 +337,20 @@ export const NotificationProvider = ({ children }) => {
 
       const notificationTitle = data.title || typeToTitle[data.type] || 'Taarifa';
 
-      showNotification({
+      const notification = {
+        id: data.id || Date.now().toString(),
         title: notificationTitle,
         message: data.message || 'Una taarifa mpya',
         type: data.type || 'general',
-      });
+        timestamp: data.timestamp || new Date().toISOString(),
+        read: false
+      };
+      
+      // Show in status bar
+      showNotification(notification);
+      
+      // Add to notifications list
+      addNotification(notification);
     });
 
     // Listen for new notifications
@@ -356,11 +374,20 @@ export const NotificationProvider = ({ children }) => {
 
       const notificationTitle = data.title || typeToTitle[data.type] || 'Taarifa';
 
-      showNotification({
+      const notification = {
+        id: data.id || Date.now().toString(),
         title: notificationTitle,
         message: data.message || 'Una taarifa mpya',
         type: data.type || 'general',
-      });
+        timestamp: data.timestamp || new Date().toISOString(),
+        read: false
+      };
+      
+      // Show in status bar
+      showNotification(notification);
+      
+      // Add to notifications list
+      addNotification(notification);
     });
 
     // Listen for access granted - UNLOCKS ALL CHANNELS
