@@ -5,6 +5,7 @@ const { PrismaClient } = require('@prisma/client');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
 const logger = require('../utils/logger');
 const auditLogService = require('../services/auditLogService');
+const pushNotificationService = require('../services/pushNotificationService');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -137,22 +138,33 @@ router.post('/notifications/send-realtime',
         from: 'admin'
       };
 
+      // Send push notifications to device status bar
+      let pushResult;
       if (userId) {
-        // Send to specific user
+        // Send to specific user via Socket.IO
         io.to(`user-${userId}`).emit('immediate-notification', notificationData);
         io.to(`user-${userId}`).emit('admin-message', notificationData);
         logger.info(`Real-time notification sent to user ${userId} by ${req.admin.email}`);
+        
+        // Send push notification to specific user's device
+        pushResult = await pushNotificationService.sendToUser(userId, notificationData, prisma);
       } else {
-        // Broadcast to all users
+        // Broadcast to all users via Socket.IO
         io.emit('immediate-notification', notificationData);
         io.emit('admin-message', notificationData);
         logger.info(`Real-time notification broadcast by ${req.admin.email}`);
+        
+        // Send push notification to all users' devices
+        pushResult = await pushNotificationService.sendToAllUsers(notificationData, prisma);
       }
+
+      logger.info(`📱 Push notification result: ${JSON.stringify(pushResult)}`);
 
       res.json({
         success: true,
         message: 'Notification sent successfully',
-        notification: notificationData
+        notification: notificationData,
+        pushNotification: pushResult
       });
     } catch (error) {
       logger.error('Error sending real-time notification:', error);
