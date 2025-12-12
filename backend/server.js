@@ -16,6 +16,7 @@ const authRoutes = require('./routes/auth');
 const channelRoutes = require('./routes/channels');
 const userRoutes = require('./routes/users');
 const notificationService = require('./services/notificationService');
+const scheduledNotificationService = require('./services/scheduledNotificationService');
 const analyticsRoutes = require('./routes/analytics');
 const notificationRoutes = require('./routes/notifications');
 const adminRoutes = require('./routes/admin');
@@ -168,7 +169,7 @@ app.use('/api/streaming', streamingRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/payments/zenopay', zenoPayRoutes); // ZenoPay payment routes
 
-// Socket.IO for real-time updates
+// Socket.IO for real-time updates with offline notification handling
 io.on('connection', (socket) => {
   logger.info(`User connected: ${socket.id}`);
 
@@ -182,19 +183,47 @@ io.on('connection', (socket) => {
     logger.info(`Admin joined room: ${socket.id}`);
   });
 
-  socket.on('join-user', (userId) => {
+  socket.on('join-user', async (userId) => {
     if (userId) {
       socket.join(`user-${userId}`);
-      socket.userId = userId; // Store userId for later use
+      socket.userId = userId;
       logger.info(`User ${userId} joined: ${socket.id}`);
+
+      // Deliver any queued offline notifications
+      try {
+        const result = await notificationService.deliverOfflineNotifications(io, userId);
+        if (result.success && result.delivered > 0) {
+          logger.info(`Delivered ${result.delivered} offline notifications to user ${userId}`);
+        }
+      } catch (error) {
+        logger.error(`Failed to deliver offline notifications to user ${userId}:`, error);
+      }
     }
   });
 
   socket.on('disconnect', () => {
-    logger.info(`User disconnected: ${socket.id}`);
+    if (socket.userId) {
+      logger.info(`User ${socket.userId} disconnected: ${socket.id}`);
+    } else {
+      logger.info(`User disconnected: ${socket.id}`);
+    }
   });
 
-  // Handle connection errors
+  socket.on('reconnect', async () => {
+    if (socket.userId) {
+      logger.info(`User ${socket.userId} reconnected: ${socket.id}`);
+      
+      try {
+        const result = await notificationService.deliverOfflineNotifications(io, socket.userId);
+        if (result.success && result.delivered > 0) {
+          logger.info(`Delivered ${result.delivered} offline notifications on reconnect to user ${socket.userId}`);
+        }
+      } catch (error) {
+        logger.error(`Failed to deliver offline notifications on reconnect to user ${socket.userId}:`, error);
+      }
+    }
+  });
+
   socket.on('error', (error) => {
     logger.error(`Socket error for ${socket.id}:`, error);
   });
@@ -203,71 +232,9 @@ io.on('connection', (socket) => {
 // Make io available to routes
 app.set('io', io);
 
-// Scheduled Notifications Processor
-async function processScheduledNotifications() {
-  try {
-    // Skip if database is not available
-    if (!process.env.DATABASE_URL || process.env.DATABASE_URL.includes('localhost:5432')) {
-      return; // Silently skip when no database
-    }
-    
-    const now = new Date();
-    const dueNotifications = await prisma.notification.findMany({
-      where: {
-        isActive: true,
-        sentAt: null,
-        scheduledAt: { lte: now }
-      }
-    });
-
-    if (!dueNotifications.length) return;
-
-    for (const notif of dueNotifications) {
-      // Determine target users
-      let users;
-      if (Array.isArray(notif.targetUsers) && notif.targetUsers.length > 0) {
-        users = await prisma.user.findMany({
-          where: { id: { in: notif.targetUsers } },
-          select: { id: true }
-        });
-      } else {
-        users = await prisma.user.findMany({ select: { id: true } });
-      }
-
-      // Broadcast via Socket.IO
-      await notificationService.sendRealTimeNotification(io, users, notif.title, notif.message, {
-        type: notif.type,
-        notificationId: notif.id
-      });
-
-      // Mark as sent
-      const updated = await prisma.notification.update({
-        where: { id: notif.id },
-        data: { sentAt: new Date() }
-      });
-
-      // Inform admin dashboard to refresh
-      io.to('admin-room').emit('notification-updated', { notification: updated });
-
-      // Also emit immediate notification to user rooms for consistency
-      users.forEach(user => {
-        io.to(`user-${user.id}`).emit('immediate-notification', {
-          id: updated.id,
-          title: updated.title,
-          message: updated.message,
-          type: updated.type,
-          timestamp: updated.createdAt
-        });
-      });
-    }
-  } catch (err) {
-    logger.error('Error processing scheduled notifications:', err);
-  }
-}
-
-// Run scheduler every 30 seconds
-const SCHEDULE_INTERVAL_MS = parseInt(process.env.NOTIFICATION_SCHEDULE_INTERVAL_MS || '30000', 10);
-setInterval(processScheduledNotifications, SCHEDULE_INTERVAL_MS);
+// Initialize scheduled notification service
+scheduledNotificationService.initialize(io);
+logger.info('✅ Scheduled notification service started');
 
 // Error handling middleware
 app.use(errorHandler);
@@ -280,6 +247,7 @@ app.use('*', (req, res) => {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down gracefully');
+  scheduledNotificationService.stopCronJob();
   await prisma.$disconnect();
   server.close(() => {
     logger.info('Process terminated');
@@ -288,6 +256,7 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down gracefully');
+  scheduledNotificationService.stopCronJob();
   await prisma.$disconnect();
   server.close(() => {
     logger.info('Process terminated');

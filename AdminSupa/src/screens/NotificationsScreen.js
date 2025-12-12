@@ -131,19 +131,20 @@ const NotificationsScreen = () => {
       
       // Immediately add the new notification to the list (optimistic update)
       if (response && response.notification) {
+        const stats = response.stats || {};
         const newNotification = {
           ...response.notification,
           _count: {
-            userNotifications: response.sentTo || 0
+            userNotifications: stats.totalUsers || stats.userNotificationsCreated || 0
           },
           analytics: {
-            totalSent: response.sentTo || 0,
-            delivered: 0,
+            totalSent: stats.totalUsers || stats.userNotificationsCreated || 0,
+            delivered: stats.socketEmissions || 0,
             read: 0,
             clicked: 0,
-            deliveryRate: 0,
-            readRate: 0,
-            clickRate: 0
+            deliveryRate: stats.totalUsers > 0 ? ((stats.socketEmissions / stats.totalUsers) * 100).toFixed(1) : '0',
+            readRate: '0',
+            clickRate: '0'
           }
         };
         
@@ -159,10 +160,11 @@ const NotificationsScreen = () => {
         console.warn('⚠️ No notification object in response:', response);
       }
       
+      const stats = response.stats || {};
       showCustomModal({
         type: 'success',
         title: 'Notification Sent!',
-        message: `Your notification has been sent to ${response.sentTo || 'all'} users!`,
+        message: `Sent to ${stats.totalUsers || 0} users!\n${stats.socketEmissions || 0} online, ${stats.offlineUsers || 0} offline, ${stats.pushNotificationsSent || 0} push sent.`,
       });
 
       setModalVisible(false);
