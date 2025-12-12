@@ -283,6 +283,42 @@ router.put('/change-password',
   }
 );
 
+// Get all users (for admin to see all registered users)
+router.get('/users/list', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        deviceId: true,
+        uniqueUserId: true,
+        deviceToken: true,
+        isBlocked: true,
+        isActivated: true,
+        isSubscribed: true,
+        subscriptionType: true,
+        remainingTime: true,
+        points: true,
+        lastActive: true,
+        createdAt: true
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    logger.info(`Admin ${req.admin.email} fetched user list: ${users.length} users`);
+
+    res.json({
+      success: true,
+      total: users.length,
+      users: users
+    });
+  } catch (error) {
+    logger.error('Error fetching users list:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
 // Get all admins (super admin only)
 router.get('/all', authMiddleware, adminOnly, async (req, res) => {
   try {
@@ -1386,6 +1422,45 @@ router.post('/notifications/send-realtime',
     }
   }
 );
+
+// Get all sent notifications (admin view)
+router.get('/notifications/admin/all', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { page = 1, limit = 20, type } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const where = type ? { type } : {};
+
+    const [notifications, totalCount] = await Promise.all([
+      prisma.notification.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: parseInt(limit),
+        include: {
+          _count: {
+            select: { userNotifications: true }
+          }
+        }
+      }),
+      prisma.notification.count({ where })
+    ]);
+
+    res.json({
+      notifications,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalCount / parseInt(limit)),
+        totalCount,
+        hasNext: skip + parseInt(limit) < totalCount,
+        hasPrev: parseInt(page) > 1
+      }
+    });
+  } catch (error) {
+    logger.error('Error fetching notifications:', error);
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
+});
 
 // Get system stats with analytics
 router.get('/stats', authMiddleware, adminOnly, async (req, res) => {
