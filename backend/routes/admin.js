@@ -2098,6 +2098,43 @@ router.get('/audit-logs',
   }
 );
 
+// Update user device token (admin only)
+router.patch('/users/:userId/device-token',
+  authMiddleware,
+  adminOnly,
+  async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { deviceToken } = req.body;
+
+      if (!deviceToken) {
+        return res.status(400).json({ error: 'Device token is required' });
+      }
+
+      const user = await prisma.user.update({
+        where: { id: userId },
+        data: { deviceToken },
+        select: {
+          id: true,
+          uniqueUserId: true,
+          deviceToken: true
+        }
+      });
+
+      logger.info(`Device token updated for user ${user.uniqueUserId} by admin ${req.admin.email}`);
+
+      res.json({
+        success: true,
+        message: 'Device token updated successfully',
+        user
+      });
+    } catch (error) {
+      logger.error('Error updating user device token:', error);
+      res.status(500).json({ error: 'Failed to update device token' });
+    }
+  }
+);
+
 // User joined notification (public endpoint for mobile app)
 router.post('/user-joined', async (req, res) => {
   try {
