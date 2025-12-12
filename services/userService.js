@@ -35,6 +35,13 @@ class UserService {
         this.token = storedToken;
         console.log('✅ User loaded from storage:', this.user.uniqueUserId);
 
+        // Ensure device token is registered
+        const deviceToken = await this.getOrCreateDeviceToken();
+        if (deviceToken && !this.user.deviceToken) {
+          // Register device token with backend
+          await this.registerDeviceToken(deviceToken);
+        }
+
         // Update last active on backend
         await this.updateLastActive();
 
@@ -45,13 +52,17 @@ class UserService {
         };
       }
 
+      // Generate device token
+      const deviceToken = await this.getOrCreateDeviceToken();
+      
       // Register new user with backend
       const deviceInfo = await this.getDeviceInfo();
       const response = await apiService.post('/auth/initialize', {
         deviceId: this.deviceId,
         deviceName: deviceInfo.deviceName,
         platform: deviceInfo.platform,
-        appVersion: deviceInfo.appVersion
+        appVersion: deviceInfo.appVersion,
+        deviceToken: deviceToken
       });
 
       if (response.user && response.token) {
@@ -104,6 +115,56 @@ class UserService {
       console.error('Error getting device ID:', error);
       // Generate fallback ID
       return `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+  }
+
+  /**
+   * Get or create device token for push notifications
+   */
+  async getOrCreateDeviceToken() {
+    try {
+      let token = await AsyncStorage.getItem('deviceToken');
+      
+      if (!token) {
+        // Generate a unique device token
+        token = `FCM_${this.deviceId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        await AsyncStorage.setItem('deviceToken', token);
+        console.log('📱 Generated new device token:', token.substring(0, 30) + '...');
+      } else {
+        console.log('📱 Using existing device token:', token.substring(0, 30) + '...');
+      }
+      
+      return token;
+    } catch (error) {
+      console.error('❌ Error getting device token:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Register device token with backend
+   */
+  async registerDeviceToken(deviceToken) {
+    try {
+      if (!this.token) {
+        console.warn('⚠️ No auth token, cannot register device token');
+        return;
+      }
+
+      const response = await apiService.post('/users/device-token', {
+        deviceToken: deviceToken
+      });
+
+      if (response.success) {
+        console.log('✅ Device token registered with backend');
+        // Update local user object
+        if (this.user) {
+          this.user.deviceToken = deviceToken;
+          await AsyncStorage.setItem('user', JSON.stringify(this.user));
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error registering device token:', error);
     }
   }
 

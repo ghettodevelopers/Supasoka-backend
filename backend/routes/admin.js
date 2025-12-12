@@ -161,6 +161,38 @@ router.post('/notifications/send-realtime',
   }
 );
 
+// Get device token statistics
+router.get('/notifications/stats',
+  authMiddleware,
+  adminOnly,
+  async (req, res) => {
+    try {
+      const totalUsers = await prisma.user.count();
+      const usersWithTokens = await prisma.user.count({
+        where: { deviceToken: { not: null } }
+      });
+      const activeUsers = await prisma.user.count({
+        where: {
+          deviceToken: { not: null },
+          isBlocked: false
+        }
+      });
+
+      const stats = {
+        totalUsers,
+        usersWithTokens,
+        activeUsers,
+        tokenCoverage: totalUsers > 0 ? ((usersWithTokens / totalUsers) * 100).toFixed(2) : '0.00'
+      };
+
+      res.json({ success: true, stats });
+    } catch (error) {
+      logger.error('Error getting notification stats:', error);
+      res.status(500).json({ error: 'Failed to get notification stats' });
+    }
+  }
+);
+
 // Grant user access
 router.post('/users/grant-access',
   authMiddleware,

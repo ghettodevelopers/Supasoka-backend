@@ -25,7 +25,7 @@ const handleUserInitialization = async (req, res) => {
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { deviceId, deviceName, platform } = req.body;
+      const { deviceId, deviceName, platform, deviceToken } = req.body;
 
       // Find or create user
       let user;
@@ -38,10 +38,14 @@ const handleUserInitialization = async (req, res) => {
           // Generate shorter unique user ID
           const uniqueUserId = `User_${Math.random().toString(36).substr(2, 6)}`;
           
+          // Generate device token if not provided
+          const finalDeviceToken = deviceToken || `FCM_${deviceId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          
           user = await prisma.user.create({
             data: {
               deviceId,
               uniqueUserId,
+              deviceToken: finalDeviceToken,
               lastActive: new Date(),
               remainingTime: 0, // No free time by default
               points: 0,
@@ -50,14 +54,29 @@ const handleUserInitialization = async (req, res) => {
               accessLevel: 'basic'
             }
           });
+          
+          logger.info(`✅ New user created with device token: ${user.id}`);
         } else {
-          // Update existing user
+          // Update existing user and refresh device token if provided
+          const updateData = {
+            lastActive: new Date()
+          };
+          
+          // Update device token if provided or if missing
+          if (deviceToken) {
+            updateData.deviceToken = deviceToken;
+          } else if (!user.deviceToken) {
+            updateData.deviceToken = `FCM_${deviceId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          }
+          
           user = await prisma.user.update({
             where: { deviceId },
-            data: {
-              lastActive: new Date()
-            }
+            data: updateData
           });
+          
+          if (updateData.deviceToken) {
+            logger.info(`✅ Device token updated for user: ${user.id}`);
+          }
         }
 
         const token = generateToken({ userId: user.id, deviceId: user.deviceId });
@@ -68,6 +87,7 @@ const handleUserInitialization = async (req, res) => {
             id: user.id,
             deviceId: user.deviceId,
             uniqueUserId: user.uniqueUserId,
+            deviceToken: user.deviceToken,
             remainingTime: user.remainingTime,
             points: user.points,
             isActivated: user.isActivated,

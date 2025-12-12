@@ -20,6 +20,7 @@ export const NotificationProvider = ({ children }) => {
   const [connected, setConnected] = useState(false);
   const socketRef = useRef(null);
   const currentUrlIndex = useRef(0);
+  const deviceTokenRef = useRef(null);
 
   useEffect(() => {
     // Configure push notifications
@@ -67,6 +68,9 @@ export const NotificationProvider = ({ children }) => {
   const configurePushNotifications = async () => {
     // Request permission first for Android 13+
     await requestNotificationPermission();
+    
+    // Generate or retrieve device token
+    await generateDeviceToken();
 
     // Create HIGH PRIORITY notification channel for Android (like WhatsApp/YouTube)
     PushNotification.createChannel(
@@ -170,6 +174,66 @@ export const NotificationProvider = ({ children }) => {
     // Test notification removed - only show real admin notifications
   };
 
+  // Generate and store device token
+  const generateDeviceToken = async () => {
+    try {
+      // Check if we already have a device token
+      let token = await AsyncStorage.getItem('deviceToken');
+      
+      if (!token) {
+        // Generate a unique device token
+        const deviceId = await AsyncStorage.getItem('deviceId');
+        token = `FCM_${deviceId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        await AsyncStorage.setItem('deviceToken', token);
+        console.log('📱 Generated new device token:', token.substring(0, 30) + '...');
+      } else {
+        console.log('📱 Using existing device token:', token.substring(0, 30) + '...');
+      }
+      
+      deviceTokenRef.current = token;
+      return token;
+    } catch (error) {
+      console.error('❌ Error generating device token:', error);
+      return null;
+    }
+  };
+
+  // Register device token with backend
+  const registerDeviceToken = async () => {
+    try {
+      const token = deviceTokenRef.current;
+      if (!token) {
+        console.warn('⚠️ No device token to register');
+        return;
+      }
+
+      const authToken = await AsyncStorage.getItem('authToken');
+      if (!authToken) {
+        console.warn('⚠️ No auth token, cannot register device token');
+        return;
+      }
+
+      // Register with backend
+      const response = await fetch('https://supasoka-backend.onrender.com/api/users/device-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ deviceToken: token })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Device token registered with backend:', data.success);
+      } else {
+        console.warn('⚠️ Failed to register device token with backend:', response.status);
+      }
+    } catch (error) {
+      console.error('❌ Error registering device token with backend:', error);
+    }
+  };
+
   // Handle notification tap - navigate to appropriate screen
   const handleNotificationTap = (notification) => {
     const { type, data } = notification.data || {};
@@ -221,6 +285,9 @@ export const NotificationProvider = ({ children }) => {
     socket.on('connect', () => {
       console.log('✅ Socket connected');
       setConnected(true);
+      
+      // Register device token with backend when socket connects
+      registerDeviceToken();
     });
 
     socket.on('disconnect', () => {
