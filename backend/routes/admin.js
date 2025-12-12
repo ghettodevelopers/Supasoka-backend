@@ -256,9 +256,13 @@ router.post('/notifications/send-realtime',
       const offlineUsers = totalUsers - socketEmissions;
       const stats = {
         totalUsers,
+        sentTo: totalUsers,
         socketEmissions,
+        online: socketEmissions,
         offlineUsers,
+        offline: offlineUsers,
         pushNotificationsSent,
+        pushSent: pushNotificationsSent,
         userNotificationsCreated: userNotificationsResult.count
       };
 

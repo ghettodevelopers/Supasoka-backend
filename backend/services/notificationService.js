@@ -1,56 +1,57 @@
+const { PrismaClient } = require('@prisma/client');
+const pushyService = require('./pushyService');
 const logger = require('../utils/logger');
+
+const prisma = new PrismaClient();
 
 class NotificationService {
   constructor() {
     this.isEnabled = true;
-    logger.info('✅ Pure Node.js notification service initialized');
+    this.offlineQueue = new Map();
+    logger.info('✅ Enhanced notification service initialized');
   }
 
-  async sendToDevice(deviceId, notification, data = {}) {
+  async sendToDevice(deviceToken, notification, data = {}) {
     try {
-      // For now, we'll use Socket.IO for real-time notifications
-      // In a production environment, you could integrate with FCM, APNS, or other services
-      logger.info(`Notification prepared for device ${deviceId}: ${notification.title}`);
+      if (!deviceToken) {
+        logger.warn('No device token provided for notification');
+        return { 
+          success: false, 
+          error: 'No device token provided'
+        };
+      }
+
+      const result = await pushyService.sendToDevice(deviceToken, notification, data);
       
-      return { 
-        success: true, 
-        message: 'Notification queued for real-time delivery',
-        deviceId,
-        notification
-      };
+      if (result.success) {
+        logger.info(`Notification sent to device: ${notification.title}`);
+      }
+      
+      return result;
     } catch (error) {
-      logger.error('Failed to send notification:', error);
+      logger.error('Failed to send notification to device:', error);
       return { success: false, error: error.message };
     }
   }
 
-  async sendToMultipleDevices(deviceIds, notification, data = {}) {
-    if (!Array.isArray(deviceIds) || deviceIds.length === 0) {
-      return { success: false, error: 'No device IDs provided' };
+  async sendToMultipleDevices(deviceTokens, notification, data = {}) {
+    if (!Array.isArray(deviceTokens) || deviceTokens.length === 0) {
+      return { success: false, error: 'No device tokens provided' };
     }
 
     try {
-      const results = [];
+      const result = await pushyService.sendToMultipleDevices(deviceTokens, notification, data);
       
-      for (const deviceId of deviceIds) {
-        const result = await this.sendToDevice(deviceId, notification, data);
-        results.push({ deviceId, ...result });
-      }
-
-      logger.info(`Notifications prepared for ${deviceIds.length} devices`);
+      logger.info(`Notifications sent to ${result.sentCount || 0} devices`);
       
-      return { 
-        success: true, 
-        results,
-        totalDevices: deviceIds.length
-      };
+      return result;
     } catch (error) {
       logger.error('Failed to send notifications to multiple devices:', error);
       return { success: false, error: error.message };
     }
   }
 
-  async sendChannelUpdate(channelData, updateType = 'updated') {
+  async sendChannelUpdate(io, channelData, updateType = 'updated') {
     const notification = {
       title: 'Channel Update',
       message: this.getChannelUpdateMessage(channelData, updateType),
@@ -65,31 +66,37 @@ class NotificationService {
     };
 
     try {
-      logger.info(`Channel update notification prepared: ${updateType} - ${channelData.name}`);
+      if (io) {
+        io.emit('channel-update', {
+          ...notification,
+          ...data
+        });
+      }
+
+      logger.info(`Channel update notification sent: ${updateType} - ${channelData.name}`);
       
       return { 
         success: true, 
         notification,
-        data,
-        message: 'Channel update notification ready for broadcast'
+        data
       };
     } catch (error) {
-      logger.error('Failed to prepare channel update notification:', error);
+      logger.error('Failed to send channel update notification:', error);
       return { success: false, error: error.message };
     }
   }
 
-  async sendNewChannelNotification(channelData) {
-    return this.sendChannelUpdate(channelData, 'added');
+  async sendNewChannelNotification(io, channelData) {
+    return this.sendChannelUpdate(io, channelData, 'added');
   }
 
-  async sendChannelDeletedNotification(channelData) {
-    return this.sendChannelUpdate(channelData, 'deleted');
+  async sendChannelDeletedNotification(io, channelData) {
+    return this.sendChannelUpdate(io, channelData, 'deleted');
   }
 
-  async sendChannelStatusNotification(channelData, isActive) {
+  async sendChannelStatusNotification(io, channelData, isActive) {
     const updateType = isActive ? 'activated' : 'deactivated';
-    return this.sendChannelUpdate(channelData, updateType);
+    return this.sendChannelUpdate(io, channelData, updateType);
   }
 
   getChannelUpdateMessage(channelData, updateType) {
@@ -130,7 +137,6 @@ class NotificationService {
 
   async validateDevice(deviceId) {
     try {
-      // Simple validation - in production you might want more sophisticated checks
       if (!deviceId || typeof deviceId !== 'string') {
         return { success: false, error: 'Invalid device ID' };
       }
@@ -143,11 +149,10 @@ class NotificationService {
     }
   }
 
-  // Real-time notification via Socket.IO
   async sendRealTimeNotification(io, users, title, message, data = {}) {
     try {
       const notification = {
-        id: Date.now().toString(),
+        id: data.notificationId || Date.now().toString(),
         title,
         message,
         type: data.type || 'general',
@@ -155,14 +160,17 @@ class NotificationService {
         ...data
       };
 
-      // Send to all connected clients
       io.emit('notification', notification);
       
-      // Send to specific user rooms if users are provided
       if (users && Array.isArray(users)) {
-        users.forEach(user => {
+        for (const user of users) {
           io.to(`user-${user.id}`).emit('notification', notification);
-        });
+          
+          const socketsInRoom = await io.in(`user-${user.id}`).fetchSockets();
+          if (socketsInRoom.length === 0) {
+            this.queueOfflineNotification(user.id, notification);
+          }
+        }
       }
 
       logger.info(`Real-time notification sent: ${title} to ${users?.length || 'all'} users`);
@@ -176,6 +184,50 @@ class NotificationService {
       logger.error('Failed to send real-time notification:', error);
       return { success: false, error: error.message };
     }
+  }
+
+  queueOfflineNotification(userId, notification) {
+    if (!this.offlineQueue.has(userId)) {
+      this.offlineQueue.set(userId, []);
+    }
+    
+    const queue = this.offlineQueue.get(userId);
+    queue.push(notification);
+    
+    if (queue.length > 50) {
+      queue.shift();
+    }
+    
+    logger.info(`Queued notification for offline user ${userId}`);
+  }
+
+  async deliverOfflineNotifications(io, userId) {
+    try {
+      const queue = this.offlineQueue.get(userId);
+      
+      if (!queue || queue.length === 0) {
+        return { success: true, delivered: 0 };
+      }
+
+      for (const notification of queue) {
+        io.to(`user-${userId}`).emit('offline-notification', notification);
+      }
+
+      const count = queue.length;
+      this.offlineQueue.delete(userId);
+      
+      logger.info(`Delivered ${count} offline notifications to user ${userId}`);
+      
+      return { success: true, delivered: count };
+    } catch (error) {
+      logger.error(`Failed to deliver offline notifications to user ${userId}:`, error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  getOfflineNotificationCount(userId) {
+    const queue = this.offlineQueue.get(userId);
+    return queue ? queue.length : 0;
   }
 }
 

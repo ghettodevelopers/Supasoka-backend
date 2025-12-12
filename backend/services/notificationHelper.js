@@ -208,7 +208,7 @@ class NotificationHelper {
         socketResult = await this.emitToAllUsers(io, 'new-notification', notificationPayload);
       }
 
-      let pushResult = { success: true, sent: 0, reason: 'Push disabled' };
+      let pushResult = { success: true, sentCount: 0, reason: 'Push disabled' };
       if (sendPush) {
         pushResult = await this.sendPushNotifications(
           users,
@@ -217,11 +217,20 @@ class NotificationHelper {
         );
       }
 
+      const pushedCount = pushResult.sentCount || pushResult.sentTo || 0;
+      const onlineCount = socketResult.emittedCount || socketResult.connectedClients || 0;
+
+      // Emit to admin dashboard with both new and legacy keys for compatibility
       await this.emitToAdmin(io, 'notification-sent', {
         notificationId,
         sentTo: users.length,
-        online: socketResult.emittedCount || socketResult.connectedClients || 0,
-        pushed: pushResult.sentCount || 0
+        totalUsers: users.length,
+        online: onlineCount,
+        socketEmissions: onlineCount,
+        offline: users.length - onlineCount,
+        offlineUsers: socketResult.offlineCount || (users.length - onlineCount),
+        pushed: pushedCount,
+        pushNotificationsSent: pushedCount
       });
 
       logger.info(`Complete notification sent: ${title} to ${users.length} users`);
@@ -232,9 +241,9 @@ class NotificationHelper {
         stats: {
           totalUsers: users.length,
           userNotificationsCreated: createResult.count,
-          socketEmissions: socketResult.emittedCount || socketResult.connectedClients || 0,
-          offlineUsers: socketResult.offlineCount || 0,
-          pushNotificationsSent: pushResult.sentCount || 0
+          socketEmissions: onlineCount,
+          offlineUsers: socketResult.offlineCount || (users.length - onlineCount),
+          pushNotificationsSent: pushedCount
         }
       };
     } catch (error) {

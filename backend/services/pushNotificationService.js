@@ -53,6 +53,7 @@ class PushNotificationService {
       return {
         success: true,
         sentTo: deviceTokens.length,
+        sentCount: deviceTokens.length,
         results: results
       };
     } catch (error) {
@@ -97,6 +98,7 @@ class PushNotificationService {
       
       return {
         ...result,
+        sentCount: result.sentCount || result.sentTo || 0,
         totalUsers: users.length
       };
     } catch (error) {
@@ -182,6 +184,7 @@ class PushNotificationService {
       
       return {
         ...result,
+        sentCount: result.sentCount || result.sentTo || 0,
         totalUsers: users.length
       };
     } catch (error) {

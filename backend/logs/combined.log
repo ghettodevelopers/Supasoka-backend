@@ -4757,3 +4757,36 @@
 {"level":"info","message":"🚀 Supasoka Backend Server running on 0.0.0.0:10000","service":"supasoka-backend","timestamp":"2025-12-01T16:32:05.449Z"}
 {"level":"info","message":"📊 Environment: development","service":"supasoka-backend","timestamp":"2025-12-01T16:32:05.450Z"}
 {"level":"info","message":"🔗 Health check: http://localhost:10000/health","service":"supasoka-backend","timestamp":"2025-12-01T16:32:05.450Z"}
+{"level":"info","message":"✅ Pushy notification service initialized","service":"supasoka-backend","timestamp":"2025-12-11T20:50:28.170Z"}
+{"level":"info","message":"✅ Enhanced notification service initialized","service":"supasoka-backend","timestamp":"2025-12-11T20:50:28.179Z"}
+{"level":"info","message":"📅 Scheduled notification cron job started (runs every 30 seconds)","service":"supasoka-backend","timestamp":"2025-12-11T20:50:29.760Z"}
+{"level":"info","message":"✅ Scheduled notification service initialized","service":"supasoka-backend","timestamp":"2025-12-11T20:50:29.761Z"}
+{"level":"info","message":"✅ Scheduled notification service started","service":"supasoka-backend","timestamp":"2025-12-11T20:50:29.761Z"}
+{"level":"info","message":"🚀 Supasoka Backend Server running on 0.0.0.0:10000","service":"supasoka-backend","timestamp":"2025-12-11T20:50:29.951Z"}
+{"level":"info","message":"📊 Environment: development","service":"supasoka-backend","timestamp":"2025-12-11T20:50:29.952Z"}
+{"level":"info","message":"🔗 Health check: http://localhost:10000/health","service":"supasoka-backend","timestamp":"2025-12-11T20:50:29.952Z"}
+{"level":"info","message":"✅ Pushy notification service initialized","service":"supasoka-backend","timestamp":"2025-12-11T23:49:13.408Z"}
+{"level":"info","message":"✅ Enhanced notification service initialized","service":"supasoka-backend","timestamp":"2025-12-11T23:49:13.631Z"}
+{"level":"info","message":"📅 Scheduled notification cron job started (runs every 30 seconds)","service":"supasoka-backend","timestamp":"2025-12-11T23:49:15.260Z"}
+{"level":"info","message":"✅ Scheduled notification service initialized","service":"supasoka-backend","timestamp":"2025-12-11T23:49:15.261Z"}
+{"level":"info","message":"✅ Scheduled notification service started","service":"supasoka-backend","timestamp":"2025-12-11T23:49:15.262Z"}
+{"level":"info","message":"🚀 Supasoka Backend Server running on 0.0.0.0:10000","service":"supasoka-backend","timestamp":"2025-12-11T23:49:15.532Z"}
+{"level":"info","message":"📊 Environment: development","service":"supasoka-backend","timestamp":"2025-12-11T23:49:15.533Z"}
+{"level":"info","message":"🔗 Health check: http://localhost:10000/health","service":"supasoka-backend","timestamp":"2025-12-11T23:49:15.534Z"}
+{"level":"info","message":"✅ Pushy notification service initialized","service":"supasoka-backend","timestamp":"2025-12-12T00:57:22.361Z"}
+{"level":"info","message":"✅ Enhanced notification service initialized","service":"supasoka-backend","timestamp":"2025-12-12T00:57:22.474Z"}
+{"level":"info","message":"📅 Scheduled notification cron job started (runs every 30 seconds)","service":"supasoka-backend","timestamp":"2025-12-12T00:57:23.381Z"}
+{"level":"info","message":"✅ Scheduled notification service initialized","service":"supasoka-backend","timestamp":"2025-12-12T00:57:23.382Z"}
+{"level":"info","message":"✅ Scheduled notification service started","service":"supasoka-backend","timestamp":"2025-12-12T00:57:23.382Z"}
+{"level":"info","message":"🚀 Supasoka Backend Server running on 0.0.0.0:10000","service":"supasoka-backend","timestamp":"2025-12-12T00:57:23.425Z"}
+{"level":"info","message":"📊 Environment: development","service":"supasoka-backend","timestamp":"2025-12-12T00:57:23.427Z"}
+{"level":"info","message":"🔗 Health check: http://localhost:10000/health","service":"supasoka-backend","timestamp":"2025-12-12T00:57:23.428Z"}
+{"level":"info","message":"127.0.0.1 - - [12/Dec/2025:00:57:53 +0000] \"POST /api/auth/initialize HTTP/1.1\" 200 504 \"-\" \"axios/1.12.2\"","service":"supasoka-backend","timestamp":"2025-12-12T00:57:53.338Z"}
+{"level":"info","message":"✅ Pushy notification service initialized","service":"supasoka-backend","timestamp":"2025-12-12T06:45:17.005Z"}
+{"level":"info","message":"✅ Enhanced notification service initialized","service":"supasoka-backend","timestamp":"2025-12-12T06:45:17.014Z"}
+{"level":"info","message":"📅 Scheduled notification cron job started (runs every 30 seconds)","service":"supasoka-backend","timestamp":"2025-12-12T06:45:19.813Z"}
+{"level":"info","message":"✅ Scheduled notification service initialized","service":"supasoka-backend","timestamp":"2025-12-12T06:45:19.813Z"}
+{"level":"info","message":"✅ Scheduled notification service started","service":"supasoka-backend","timestamp":"2025-12-12T06:45:19.814Z"}
+{"level":"info","message":"🚀 Supasoka Backend Server running on 0.0.0.0:10000","service":"supasoka-backend","timestamp":"2025-12-12T06:45:19.968Z"}
+{"level":"info","message":"📊 Environment: development","service":"supasoka-backend","timestamp":"2025-12-12T06:45:19.969Z"}
+{"level":"info","message":"🔗 Health check: http://localhost:10000/health","service":"supasoka-backend","timestamp":"2025-12-12T06:45:19.969Z"}
