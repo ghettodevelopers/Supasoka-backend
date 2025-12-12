@@ -117,7 +117,12 @@ router.post('/notifications/send-realtime',
   [
     body('title').notEmpty().withMessage('Title is required'),
     body('message').notEmpty().withMessage('Message is required'),
-    body('type').optional().isString()
+    body('type').optional().isString(),
+    body('targetUsers').optional().custom((value) => {
+      if (value === null || value === undefined) return true;
+      if (Array.isArray(value)) return true;
+      throw new Error('targetUsers must be an array or null');
+    })
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -126,49 +131,167 @@ router.post('/notifications/send-realtime',
     }
 
     try {
-      const { title, message, type = 'general', userId } = req.body;
+      const { title, message, type = 'general', targetUsers } = req.body;
       const io = req.app.get('io');
 
-      const notificationData = {
-        id: Date.now().toString(),
-        title,
-        message,
-        type,
-        timestamp: new Date().toISOString(),
+      logger.info(`📬 Admin ${req.admin.email} sending notification: "${title}"`);
+
+      // Step 1: Get all target users from database
+      const whereClause = {
+        isBlocked: false,
+        ...(targetUsers && targetUsers.length > 0 ? { id: { in: targetUsers } } : {})
+      };
+
+      const users = await prisma.user.findMany({
+        where: whereClause,
+        select: {
+          id: true,
+          deviceToken: true,
+          uniqueUserId: true
+        }
+      });
+
+      const totalUsers = users.length;
+      logger.info(`📊 Found ${totalUsers} target users`);
+
+      if (totalUsers === 0) {
+        return res.status(400).json({
+          error: 'No users found to send notification to',
+          stats: {
+            totalUsers: 0,
+            socketEmissions: 0,
+            offlineUsers: 0,
+            pushNotificationsSent: 0,
+            userNotificationsCreated: 0
+          }
+        });
+      }
+
+      // Step 2: Create notification in database
+      const notification = await prisma.notification.create({
+        data: {
+          title,
+          message,
+          type,
+          targetUsers: targetUsers || null,
+          sentAt: new Date()
+        }
+      });
+
+      logger.info(`✅ Created notification in database: ${notification.id}`);
+
+      // Step 3: Create UserNotification records for all users
+      const userNotificationData = users.map(user => ({
+        userId: user.id,
+        notificationId: notification.id,
+        isRead: false,
+        clicked: false,
+        deliveredAt: null
+      }));
+
+      const userNotificationsResult = await prisma.userNotification.createMany({
+        data: userNotificationData,
+        skipDuplicates: true
+      });
+
+      logger.info(`✅ Created ${userNotificationsResult.count} UserNotification records`);
+
+      // Step 4: Send via Socket.IO to online users
+      let socketEmissions = 0;
+      const notificationPayload = {
+        id: notification.id,
+        title: notification.title,
+        message: notification.message,
+        type: notification.type,
+        timestamp: notification.createdAt.toISOString(),
         from: 'admin'
       };
 
-      // Send push notifications to device status bar
-      let pushResult;
-      if (userId) {
-        // Send to specific user via Socket.IO
-        io.to(`user-${userId}`).emit('immediate-notification', notificationData);
-        io.to(`user-${userId}`).emit('admin-message', notificationData);
-        logger.info(`Real-time notification sent to user ${userId} by ${req.admin.email}`);
-        
-        // Send push notification to specific user's device
-        pushResult = await pushNotificationService.sendToUser(userId, notificationData, prisma);
-      } else {
-        // Broadcast to all users via Socket.IO
-        io.emit('immediate-notification', notificationData);
-        io.emit('admin-message', notificationData);
-        logger.info(`Real-time notification broadcast by ${req.admin.email}`);
-        
-        // Send push notification to all users' devices
-        pushResult = await pushNotificationService.sendToAllUsers(notificationData, prisma);
+      for (const user of users) {
+        const socketsInRoom = await io.in(`user-${user.id}`).fetchSockets();
+        if (socketsInRoom.length > 0) {
+          io.to(`user-${user.id}`).emit('new-notification', notificationPayload);
+          io.to(`user-${user.id}`).emit('immediate-notification', notificationPayload);
+          socketEmissions++;
+
+          // Mark as delivered for online users
+          await prisma.userNotification.updateMany({
+            where: {
+              userId: user.id,
+              notificationId: notification.id
+            },
+            data: {
+              deliveredAt: new Date()
+            }
+          });
+        }
       }
 
-      logger.info(`📱 Push notification result: ${JSON.stringify(pushResult)}`);
+      logger.info(`📡 Sent to ${socketEmissions} online users via Socket.IO`);
 
+      // Step 5: Send push notifications to all users with device tokens
+      const usersWithTokens = users.filter(u => u.deviceToken);
+      let pushNotificationsSent = 0;
+
+      if (usersWithTokens.length > 0) {
+        const deviceTokens = usersWithTokens.map(u => u.deviceToken);
+        const pushResult = await pushNotificationService.sendToDevices(
+          deviceTokens,
+          {
+            title: notification.title,
+            message: notification.message,
+            type: notification.type
+          }
+        );
+
+        if (pushResult.success) {
+          pushNotificationsSent = pushResult.sentTo || 0;
+          logger.info(`📱 Sent push notifications to ${pushNotificationsSent} devices`);
+        } else {
+          logger.error(`❌ Push notification error: ${pushResult.error}`);
+        }
+      }
+
+      // Step 6: Calculate stats
+      const offlineUsers = totalUsers - socketEmissions;
+      const stats = {
+        totalUsers,
+        socketEmissions,
+        offlineUsers,
+        pushNotificationsSent,
+        userNotificationsCreated: userNotificationsResult.count
+      };
+
+      logger.info(`📊 Notification stats: ${JSON.stringify(stats)}`);
+
+      // Step 7: Emit to admin dashboard
+      io.to('admin-room').emit('notification-sent', {
+        notification,
+        stats
+      });
+
+      // Return response matching AdminSupa expectations
       res.json({
         success: true,
-        message: 'Notification sent successfully',
-        notification: notificationData,
-        pushNotification: pushResult
+        notification: {
+          id: notification.id,
+          title: notification.title,
+          message: notification.message,
+          type: notification.type,
+          createdAt: notification.createdAt,
+          sentAt: notification.sentAt,
+          _count: {
+            userNotifications: userNotificationsResult.count
+          }
+        },
+        stats
       });
     } catch (error) {
       logger.error('Error sending real-time notification:', error);
-      res.status(500).json({ error: 'Failed to send notification' });
+      res.status(500).json({
+        error: 'Failed to send notification',
+        details: error.message
+      });
     }
   }
 );
@@ -1206,7 +1329,7 @@ router.post('/subscriptions/check-expired',
   async (req, res) => {
     try {
       const now = new Date();
-      
+
       // Find all users with expired subscriptions
       const expiredUsers = await prisma.user.findMany({
         where: {
@@ -1411,7 +1534,7 @@ router.post('/notifications/send-realtime',
           createdAt: notification.createdAt,
           timestamp: new Date().toISOString()
         };
-        
+
         users.forEach(user => {
           // Emit multiple events to ensure notification is received
           io.to(`user-${user.id}`).emit('notification', notificationPayload);
@@ -1447,7 +1570,7 @@ router.post('/notifications/send-realtime',
           createdAt: notification.createdAt,
           timestamp: new Date().toISOString()
         };
-        
+
         // Emit multiple events to ensure notification is received by all users
         io.emit('notification', notificationPayload);
         io.emit('immediate-notification', notificationPayload);
