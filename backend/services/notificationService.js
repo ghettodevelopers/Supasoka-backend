@@ -203,22 +203,77 @@ class NotificationService {
 
   async deliverOfflineNotifications(io, userId) {
     try {
+      // First try in-memory queue (fast path)
       const queue = this.offlineQueue.get(userId);
-      
-      if (!queue || queue.length === 0) {
+
+      if (queue && queue.length > 0) {
+        for (const notification of queue) {
+          io.to(`user-${userId}`).emit('offline-notification', notification);
+        }
+
+        const count = queue.length;
+        this.offlineQueue.delete(userId);
+
+        logger.info(`Delivered ${count} offline notifications (memory) to user ${userId}`);
+
+        // Mark deliveredAt in DB for those notifications if possible
+        try {
+          const notificationIds = queue.map(n => n.id).filter(Boolean);
+          if (notificationIds.length > 0) {
+            await prisma.userNotification.updateMany({
+              where: {
+                userId,
+                notificationId: { in: notificationIds }
+              },
+              data: { deliveredAt: new Date() }
+            });
+          }
+        } catch (dbErr) {
+          logger.error(`Failed to mark deliveredAt for memory-queued notifications for user ${userId}:`, dbErr);
+        }
+
+        return { success: true, delivered: count };
+      }
+
+      // Fallback: persistent DB queue - find userNotifications not yet delivered
+      const pending = await prisma.userNotification.findMany({
+        where: {
+          userId,
+          deliveredAt: null
+        },
+        include: {
+          notification: true
+        }
+      });
+
+      if (!pending || pending.length === 0) {
         return { success: true, delivered: 0 };
       }
 
-      for (const notification of queue) {
-        io.to(`user-${userId}`).emit('offline-notification', notification);
+      for (const item of pending) {
+        const payload = {
+          id: item.notificationId,
+          title: item.notification.title,
+          message: item.notification.message,
+          type: item.notification.type,
+          timestamp: item.notification.createdAt ? item.notification.createdAt.toISOString() : new Date().toISOString()
+        };
+
+        io.to(`user-${userId}`).emit('offline-notification', payload);
+
+        // Update deliveredAt for this record
+        try {
+          await prisma.userNotification.update({
+            where: { id: item.id },
+            data: { deliveredAt: new Date() }
+          });
+        } catch (updErr) {
+          logger.error(`Failed to update deliveredAt for userNotification ${item.id}:`, updErr);
+        }
       }
 
-      const count = queue.length;
-      this.offlineQueue.delete(userId);
-      
-      logger.info(`Delivered ${count} offline notifications to user ${userId}`);
-      
-      return { success: true, delivered: count };
+      logger.info(`Delivered ${pending.length} offline notifications (DB) to user ${userId}`);
+      return { success: true, delivered: pending.length };
     } catch (error) {
       logger.error(`Failed to deliver offline notifications to user ${userId}:`, error);
       return { success: false, error: error.message };

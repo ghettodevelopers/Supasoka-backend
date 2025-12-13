@@ -1,7 +1,7 @@
 services:
 - type: web
   name: supasoka-backend
-  env: node
+  runtime: node
   region: oregon
   plan: free
   buildCommand: npm install && npx prisma generate && npx prisma db push --accept-data-loss
@@ -20,6 +20,8 @@ services:
   - key: ADMIN_EMAIL
     value: Ghettodevelopers@gmail.com
   - key: ADMIN_PASSWORD
+    sync: false
+  - key: PUSHY_SECRET_API_KEY
     sync: false
   - key: ALLOWED_ORIGINS
     value: https://supasoka-backend.onrender.com,capacitor://localhost,http://localhost:3000
