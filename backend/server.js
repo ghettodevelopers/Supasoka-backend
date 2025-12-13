@@ -15,7 +15,7 @@ const prisma = new PrismaClient();
 const authRoutes = require('./routes/auth');
 const channelRoutes = require('./routes/channels');
 const userRoutes = require('./routes/users');
-const notificationService = require('./services/notificationService');
+// Removed old notificationService - now using Firebase
 const scheduledNotificationService = require('./services/scheduledNotificationService');
 const analyticsRoutes = require('./routes/analytics');
 const notificationRoutes = require('./routes/notifications');
@@ -190,14 +190,15 @@ io.on('connection', (socket) => {
       logger.info(`User ${userId} joined: ${socket.id}`);
 
       // Deliver any queued offline notifications
-      try {
-        const result = await notificationService.deliverOfflineNotifications(io, userId);
-        if (result.success && result.delivered > 0) {
-          logger.info(`Delivered ${result.delivered} offline notifications to user ${userId}`);
-        }
-      } catch (error) {
-        logger.error(`Failed to deliver offline notifications to user ${userId}:`, error);
-      }
+      // Note: Offline notifications now handled by Firebase Cloud Messaging
+      // try {
+      //   const result = await notificationService.deliverOfflineNotifications(io, userId);
+      //   if (result.success && result.delivered > 0) {
+      //     logger.info(`Delivered ${result.delivered} offline notifications to user ${userId}`);
+      //   }
+      // } catch (error) {
+      //   logger.error(`Failed to deliver offline notifications to user ${userId}:`, error);
+      // }
     }
   });
 
@@ -212,15 +213,16 @@ io.on('connection', (socket) => {
   socket.on('reconnect', async () => {
     if (socket.userId) {
       logger.info(`User ${socket.userId} reconnected: ${socket.id}`);
-      
-      try {
-        const result = await notificationService.deliverOfflineNotifications(io, socket.userId);
-        if (result.success && result.delivered > 0) {
-          logger.info(`Delivered ${result.delivered} offline notifications on reconnect to user ${socket.userId}`);
-        }
-      } catch (error) {
-        logger.error(`Failed to deliver offline notifications on reconnect to user ${socket.userId}:`, error);
-      }
+
+      // Note: Offline notifications now handled by Firebase Cloud Messaging
+      // try {
+      //   const result = await notificationService.deliverOfflineNotifications(io, socket.userId);
+      //   if (result.success && result.delivered > 0) {
+      //     logger.info(`Delivered ${result.delivered} offline notifications on reconnect to user ${socket.userId}`);
+      //   }
+      // } catch (error) {
+      //   logger.error(`Failed to deliver offline notifications on reconnect to user ${socket.userId}:`, error);
+      // }
     }
   });
 
