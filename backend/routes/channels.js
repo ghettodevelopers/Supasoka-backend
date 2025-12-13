@@ -3,8 +3,8 @@ const { body, validationResult } = require('express-validator');
 const { PrismaClient } = require('@prisma/client');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
 const logger = require('../utils/logger');
-const notificationService = require('../services/notificationService');
 const auditLogService = require('../services/auditLogService');
+
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -20,18 +20,18 @@ const formatChannel = (channel) => {
   let parsedDrmConfig = null;
   if (channel.drmConfig) {
     try {
-      parsedDrmConfig = typeof channel.drmConfig === 'string' 
-        ? JSON.parse(channel.drmConfig) 
+      parsedDrmConfig = typeof channel.drmConfig === 'string'
+        ? JSON.parse(channel.drmConfig)
         : channel.drmConfig;
     } catch (e) {
       logger.warn(`Failed to parse drmConfig for channel ${channel.id}:`, e.message);
       parsedDrmConfig = null;
     }
   }
-  
+
   // DRM is enabled if drmConfig exists and has a clearKey
   const drmEnabled = !!(parsedDrmConfig && parsedDrmConfig.clearKey);
-  
+
   return {
     ...channel,
     drmConfig: parsedDrmConfig,
@@ -219,7 +219,7 @@ router.get('/free', async (req, res) => {
 
 // TEST ENDPOINT - Verify deployment (MUST be before /:id route)
 router.get('/test-deployment', (req, res) => {
-  res.json({ 
+  res.json({
     status: 'OK',
     message: 'Carousel routes are loaded!',
     timestamp: new Date().toISOString(),
@@ -231,7 +231,7 @@ router.get('/test-deployment', (req, res) => {
 router.get('/carousel', async (req, res) => {
   try {
     logger.info('📸 Fetching carousel images (public endpoint)...');
-    
+
     const images = await prisma.carouselImage.findMany({
       where: { isActive: true },
       orderBy: { order: 'asc' }
@@ -254,26 +254,26 @@ router.get('/carousel', async (req, res) => {
 router.get('/carousel-images', async (req, res) => {
   try {
     logger.info('📸 Fetching carousel images (alternative endpoint)...');
-    
+
     const images = await prisma.carouselImage.findMany({
       where: { isActive: true },
       orderBy: { order: 'asc' }
     });
 
     logger.info(`✅ Found ${images.length} active carousel images`);
-    
-    res.json({ 
+
+    res.json({
       success: true,
       count: images.length,
-      images 
+      images
     });
   } catch (error) {
     logger.error('❌ Error fetching carousel images:', error.message);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       count: 0,
       images: [],
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -289,7 +289,7 @@ router.get('/carousel/admin', authMiddleware, adminOnly, async (req, res) => {
     res.json({ images });
   } catch (error) {
     logger.error('Error fetching admin carousel images:', error.message);
-    
+
     // If database unavailable, return empty array
     logger.info('Database error - returning empty carousel array');
     res.json({ images: [] });
@@ -352,7 +352,7 @@ router.post('/',
 
       const numericPriority = Number.isFinite(Number(priority)) ? Number(priority) : 0;
       const drmConfigValue = drmConfig ? JSON.stringify(drmConfig) : null;
-      
+
       const sanitizedData = {
         name: name.trim(),
         logo: logo?.trim() || null,
@@ -366,7 +366,7 @@ router.post('/',
         description: description?.trim() || null,
         isFree: Boolean(isFree)
       };
-      
+
       logger.info(`Creating channel "${name}" with DRM: ${drmConfigValue ? 'Enabled' : 'Disabled'}`);
 
       const channel = await prisma.channel.create({
@@ -401,7 +401,7 @@ router.post('/',
       io.emit('channel-created', { channel: formattedChannel });
 
       // Send notification about new channel
-      await notificationService.sendNewChannelNotification(channel);
+      // Notification handled by Firebase in admin routes
 
       logger.info(`Channel created: "${channel.name}" (${channel.category}) by admin ${req.admin.email}`);
       res.status(201).json({ channel: formattedChannel });
@@ -473,8 +473,8 @@ router.put('/:id',
       const channelId = req.params.id;
       // Only reject mock channel IDs (string starting with "mock-")
       if (typeof channelId === 'string' && channelId.startsWith('mock-')) {
-        return res.status(503).json({ 
-          error: 'Database unavailable', 
+        return res.status(503).json({
+          error: 'Database unavailable',
           message: 'Cannot update mock channels. Database connection required.'
         });
       }
@@ -499,14 +499,14 @@ router.put('/:id',
       if (payload.hd !== undefined) updates.hd = Boolean(payload.hd);
       if (payload.streamUrl !== undefined) updates.streamUrl = payload.streamUrl;
       if (payload.backupUrls !== undefined) updates.backupUrls = JSON.stringify(Array.isArray(payload.backupUrls) ? payload.backupUrls : []);
-      
+
       // Always handle drmConfig - set it to null if not provided or set to its stringified value
       if (payload.drmConfig !== undefined || req.body.drmConfig !== undefined) {
         const drmConfigValue = req.body.drmConfig ? JSON.stringify(req.body.drmConfig) : null;
         updates.drmConfig = drmConfigValue;
         logger.info(`DRM config update for channel ${channelId}: ${drmConfigValue ? 'Enabled with clearKey' : 'Disabled (null)'}`);
       }
-      
+
       if (payload.priority !== undefined) {
         const p = Number(payload.priority);
         if (Number.isFinite(p)) updates.priority = p;
@@ -544,7 +544,7 @@ router.put('/:id',
       io.emit('channel-updated', { channelId, channel: formattedChannel, updates });
 
       // Send notification about channel update
-      await notificationService.sendChannelUpdate(channel, 'updated');
+      // Notification handled by Firebase in admin routes
 
       logger.info(`Channel updated: ${channel.name} by admin ${req.admin.email}`);
       res.json({ channel: formattedChannel });
@@ -574,8 +574,8 @@ router.patch('/:id/toggle',
 
       // Only reject mock channel IDs (string starting with "mock-")
       if (typeof channelId === 'string' && channelId.startsWith('mock-')) {
-        return res.status(503).json({ 
-          error: 'Database unavailable', 
+        return res.status(503).json({
+          error: 'Database unavailable',
           message: 'Cannot modify mock channels. Database connection required.'
         });
       }
@@ -605,7 +605,7 @@ router.patch('/:id/toggle',
       });
 
       // Send notification about status change
-      await notificationService.sendChannelStatusNotification(updatedChannel, updatedChannel.isActive);
+      // Notification handled by Firebase in admin routes
 
       logger.info(`Channel ${updatedChannel.isActive ? 'activated' : 'deactivated'}: ${updatedChannel.name}`);
       res.json({ channel: updatedChannel });
@@ -632,8 +632,8 @@ router.patch('/:id/toggle-free',
 
       // Only reject mock channel IDs
       if (typeof channelId === 'string' && channelId.startsWith('mock-')) {
-        return res.status(503).json({ 
-          error: 'Database unavailable', 
+        return res.status(503).json({
+          error: 'Database unavailable',
           message: 'Cannot modify mock channels. Database connection required.'
         });
       }
@@ -658,7 +658,7 @@ router.patch('/:id/toggle-free',
         isFree: updatedChannel.isFree,
         channel: updatedChannel
       });
-      
+
       // Broadcast to all users
       io.emit('channel-updated', {
         action: 'free_status_changed',
@@ -667,7 +667,7 @@ router.patch('/:id/toggle-free',
 
       // Send notification to users about free channel
       if (updatedChannel.isFree) {
-        await notificationService.sendNewFreeChannelNotification(updatedChannel);
+        // Notification handled by Firebase in admin routes
       }
 
       logger.info(`Channel ${updatedChannel.isFree ? 'marked as free' : 'marked as premium'}: ${updatedChannel.name} by admin ${req.admin.email}`);
@@ -694,8 +694,8 @@ router.delete('/:id',
       const channelId = req.params.id;
       // Only reject mock channel IDs (string starting with "mock-")
       if (typeof channelId === 'string' && channelId.startsWith('mock-')) {
-        return res.status(503).json({ 
-          error: 'Database unavailable', 
+        return res.status(503).json({
+          error: 'Database unavailable',
           message: 'Cannot delete mock channels. Database connection required.'
         });
       }
@@ -734,7 +734,7 @@ router.delete('/:id',
       io.emit('channel-deleted', { channelId });
 
       // Send notification about channel deletion
-      await notificationService.sendChannelDeletedNotification(channelToDelete);
+      // Notification handled by Firebase in admin routes
 
       logger.info(`Channel deleted: ${channelToDelete.name} by admin ${req.admin.email}`);
       res.json({ message: 'Channel deleted successfully' });
@@ -929,7 +929,7 @@ router.get('/meta/categories', async (req, res) => {
     res.json({ categories });
   } catch (error) {
     logger.error('Error fetching categories:', error);
-    
+
     // If database unavailable, return empty array
     logger.info('Database unavailable - returning empty categories array');
     res.json({ categories: [] });

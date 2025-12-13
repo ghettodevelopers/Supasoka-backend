@@ -9,7 +9,7 @@ import AppNavigator from './navigation/AppNavigator';
 import userService from './services/userService';
 import timeCheckerService from './services/timeCheckerService';
 import adMobService from './services/adMobService';
-import pushyService from './services/pushyService';
+import deviceTokenService from './services/deviceTokenService';
 
 const App = () => {
   const [isInitializing, setIsInitializing] = useState(true);
@@ -42,14 +42,19 @@ const App = () => {
         console.log('👤 Existing user loaded:', user.uniqueUserId);
       }
 
-      // Initialize Pushy for push notifications
+      // Initialize device token for push notifications
       try {
-        console.log('🔔 Initializing push notifications...');
-        await pushyService.initialize();
-        console.log('✅ Push notifications ready');
-      } catch (pushyError) {
-        console.warn('⚠️ Push notifications failed to initialize:', pushyError.message);
-        // Continue app initialization even if Pushy fails
+        console.log('🔔 Initializing device token service...');
+        const deviceToken = await deviceTokenService.initialize();
+        if (deviceToken) {
+          console.log('✅ Device token service ready');
+          console.log('🔑 Device token registered');
+        } else {
+          console.warn('⚠️ Device token not available yet');
+        }
+      } catch (tokenError) {
+        console.warn('⚠️ Device token service failed to initialize:', tokenError.message);
+        // Continue app initialization even if token service fails
       }
 
       // Start time monitoring for access control

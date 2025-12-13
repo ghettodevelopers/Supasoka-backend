@@ -93,7 +93,7 @@ Added new menu item: **"Taarifa"** (Notifications)
 - ✅ **Admin Messages** - Direct messages from admin
 - ✅ **Access Granted** - Special access permissions
 - ✅ **Account Activation** - When admin grants time
-- ✅ **Settings Updates** - Contact settings changes
+- ✅ **Status Bar Notifications** - Appear in device notification tray
 
 ### Notification Delivery:
 - **Status Bar Notifications** - Appear in device notification tray

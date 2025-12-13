@@ -2,9 +2,9 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { PrismaClient } = require('@prisma/client');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
-const notificationService = require('../services/notificationService');
 const notificationHelper = require('../services/notificationHelper');
 const logger = require('../utils/logger');
+
 
 // Pure Node.js notification system - no external push services
 // Notifications delivered via Socket.IO (online) + DB polling (offline)
@@ -56,11 +56,11 @@ router.get('/', authMiddleware, async (req, res) => {
         take: parseInt(limit)
       }),
       prisma.userNotification.count({ where }),
-      prisma.userNotification.count({ 
-        where: { 
-          userId: req.user.id, 
-          isRead: false 
-        } 
+      prisma.userNotification.count({
+        where: {
+          userId: req.user.id,
+          isRead: false
+        }
       })
     ]);
 
@@ -85,25 +85,25 @@ router.patch('/:id/read', authMiddleware, async (req, res) => {
   try {
     const notificationId = req.params.id;
     const userId = req.user.id;
-    
+
     const result = await notificationHelper.markAsReadWithTransaction(userId, notificationId);
 
     if (!result.success) {
       logger.error(`Failed to mark notification as read - User: ${userId}, Notification: ${notificationId}`, result.error);
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: result.error,
         context: { userId, notificationId }
       });
     }
 
     logger.info(`Notification ${notificationId} marked as read by user ${userId}`);
-    res.json({ 
+    res.json({
       userNotification: result.userNotification,
       alreadyRead: result.alreadyRead
     });
   } catch (error) {
     logger.error(`Error marking notification as read - User: ${req.user.id}, Notification: ${req.params.id}:`, error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to mark notification as read',
       context: { userId: req.user.id, notificationId: req.params.id }
     });
@@ -136,25 +136,25 @@ router.post('/:id/click', authMiddleware, async (req, res) => {
   try {
     const notificationId = req.params.id;
     const userId = req.user.id;
-    
+
     const result = await notificationHelper.markAsClickedWithTransaction(userId, notificationId);
 
     if (!result.success) {
       logger.error(`Failed to track notification click - User: ${userId}, Notification: ${notificationId}:`, result.error);
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: result.error,
         context: { userId, notificationId }
       });
     }
 
     logger.info(`Notification ${notificationId} clicked by user ${userId}`);
-    res.json({ 
+    res.json({
       userNotification: result.userNotification,
       alreadyClicked: result.alreadyClicked
     });
   } catch (error) {
     logger.error(`Error tracking notification click - User: ${req.user.id}, Notification: ${req.params.id}:`, error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to track notification click',
       context: { userId: req.user.id, notificationId: req.params.id }
     });
@@ -165,7 +165,7 @@ router.post('/:id/click', authMiddleware, async (req, res) => {
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     const notificationId = req.params.id;
-    
+
     await prisma.userNotification.delete({
       where: {
         userId_notificationId: {
@@ -206,7 +206,7 @@ router.get('/unread-count', authMiddleware, async (req, res) => {
 
     if (!result.success) {
       logger.error(`Failed to fetch unread count - User: ${userId}:`, result.error);
-      return res.status(500).json({ 
+      return res.status(500).json({
         error: result.error,
         context: { userId }
       });
@@ -215,7 +215,7 @@ router.get('/unread-count', authMiddleware, async (req, res) => {
     res.json({ unreadCount: result.count });
   } catch (error) {
     logger.error(`Error fetching unread count - User: ${req.user.id}:`, error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to fetch unread count',
       context: { userId: req.user.id }
     });
@@ -298,7 +298,7 @@ router.get('/admin/all', authMiddleware, adminOnly, async (req, res) => {
     const notificationsWithAnalytics = notifications.map(notif => {
       const stats = analyticsMap.get(notif.id) || { totalSent: 0, read: 0, clicked: 0 };
       const delivered = deliveredMap.get(notif.id) || 0;
-      
+
       return {
         ...notif,
         analytics: {
@@ -326,7 +326,7 @@ router.get('/admin/all', authMiddleware, adminOnly, async (req, res) => {
     });
   } catch (error) {
     logger.error(`Error fetching admin notifications - Admin: ${req.admin?.email}:`, error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to fetch notifications',
       context: { adminEmail: req.admin?.email }
     });
@@ -391,7 +391,7 @@ router.post('/admin/create',
 
         if (!result.success) {
           logger.error(`Failed to send notification ${notification.id} - Admin: ${req.admin.email}:`, result.error);
-          return res.status(500).json({ 
+          return res.status(500).json({
             error: result.error,
             notification,
             context: { adminEmail: req.admin.email, notificationId: notification.id }
@@ -403,25 +403,25 @@ router.post('/admin/create',
           data: { sentAt: new Date() }
         });
 
-        await notificationHelper.emitToAdmin(io, 'notification-created', { 
+        await notificationHelper.emitToAdmin(io, 'notification-created', {
           notification,
           stats: result.stats
         });
 
         logger.info(`Notification created and sent: ${title} by admin ${req.admin.email}`);
-        res.status(201).json({ 
+        res.status(201).json({
           notification,
           stats: result.stats,
           scheduled: false
         });
       } else {
-        await notificationHelper.emitToAdmin(io, 'notification-created', { 
+        await notificationHelper.emitToAdmin(io, 'notification-created', {
           notification,
           scheduled: true
         });
 
         logger.info(`Notification scheduled: ${title} for ${scheduledAt} by admin ${req.admin.email}`);
-        res.status(201).json({ 
+        res.status(201).json({
           notification,
           scheduled: true,
           scheduledAt
@@ -429,7 +429,7 @@ router.post('/admin/create',
       }
     } catch (error) {
       logger.error(`Error creating notification - Admin: ${req.admin?.email}:`, error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to create notification',
         context: { adminEmail: req.admin?.email }
       });
@@ -445,9 +445,9 @@ router.post('/admin/send-immediate',
     body('title').notEmpty().withMessage('Title is required'),
     body('message').notEmpty().withMessage('Message is required'),
     body('type').optional().isIn([
-      'general', 
-      'subscription', 
-      'update', 
+      'general',
+      'subscription',
+      'update',
       'maintenance',
       'match_started',
       'goal',
@@ -506,7 +506,7 @@ router.post('/admin/send-immediate',
 
       if (!result.success) {
         logger.error(`Failed to send immediate notification ${notification.id} - Admin: ${req.admin.email}:`, result.error);
-        return res.status(500).json({ 
+        return res.status(500).json({
           error: result.error,
           notification,
           context: { adminEmail: req.admin.email, notificationId: notification.id }
@@ -514,13 +514,13 @@ router.post('/admin/send-immediate',
       }
 
       logger.info(`Immediate notification sent: ${title} to ${result.stats.totalUsers} users by admin ${req.admin.email}`);
-      res.status(201).json({ 
+      res.status(201).json({
         notification,
         stats: result.stats
       });
     } catch (error) {
       logger.error(`Error sending immediate notification - Admin: ${req.admin?.email}:`, error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to send notification',
         context: { adminEmail: req.admin?.email }
       });
@@ -561,7 +561,7 @@ router.delete('/admin/:id',
   async (req, res) => {
     try {
       const notificationId = req.params.id;
-      
+
       await prisma.notification.delete({
         where: { id: notificationId }
       });
@@ -593,7 +593,7 @@ router.post('/register-device',
       // Update user with device info (for tracking purposes)
       await prisma.user.update({
         where: { id: userId },
-        data: { 
+        data: {
           ...(deviceToken && { deviceToken }),
           ...(deviceId && { deviceId }),
           lastActive: new Date()
@@ -601,13 +601,13 @@ router.post('/register-device',
       });
 
       logger.info(`📱 Device registered for user ${userId} (using DB polling for notifications)`);
-      res.json({ 
+      res.json({
         message: 'Device registered successfully',
         notificationMethod: 'database_polling' // Inform client about notification method
       });
     } catch (error) {
       logger.error(`Error registering device - User: ${req.user?.id}:`, error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to register device',
         context: { userId: req.user?.id }
       });
@@ -668,7 +668,7 @@ router.get('/pending', authMiddleware, async (req, res) => {
     });
   } catch (error) {
     logger.error(`Error fetching pending notifications - User: ${req.user?.id}:`, error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to fetch pending notifications',
       context: { userId: req.user?.id }
     });
@@ -692,7 +692,7 @@ router.post('/test-notification',
 
       if (!user) {
         logger.error(`Test notification failed - User not found: ${userId}`);
-        return res.status(404).json({ 
+        return res.status(404).json({
           error: 'User not found',
           context: { userId }
         });
@@ -713,8 +713,8 @@ router.post('/test-notification',
       const isOnline = socketsInRoom.length > 0;
 
       logger.info(`Test notification sent to user ${userId} - Online: ${isOnline}`);
-      
-      res.json({ 
+
+      res.json({
         message: 'Test notification sent successfully',
         notification: testNotification,
         userStatus: {
@@ -724,7 +724,7 @@ router.post('/test-notification',
       });
     } catch (error) {
       logger.error(`Error sending test notification - User: ${req.user?.id}:`, error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to send test notification',
         context: { userId: req.user?.id }
       });
@@ -748,7 +748,7 @@ router.post('/test-push',
 
       if (!user) {
         logger.error(`Test notification failed - User not found: ${userId}`);
-        return res.status(404).json({ 
+        return res.status(404).json({
           error: 'User not found',
           context: { userId }
         });
@@ -789,7 +789,7 @@ router.post('/test-push',
       }
 
       logger.info(`📱 Test notification sent to user ${userId} (online: ${isOnline})`);
-      res.json({ 
+      res.json({
         message: 'Test notification sent successfully',
         notification: {
           id: testNotification.id,
@@ -804,7 +804,7 @@ router.post('/test-push',
       });
     } catch (error) {
       logger.error(`Error sending test notification - User: ${req.user?.id}:`, error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to send test notification',
         context: { userId: req.user?.id }
       });
@@ -856,7 +856,7 @@ router.post('/admin/send-status-bar',
 
       if (!result.success) {
         logger.error(`Failed to send status bar notification ${notification.id} - Admin: ${req.admin.email}:`, result.error);
-        return res.status(500).json({ 
+        return res.status(500).json({
           error: result.error,
           notification,
           context: { adminEmail: req.admin.email, notificationId: notification.id }
@@ -864,14 +864,14 @@ router.post('/admin/send-status-bar',
       }
 
       logger.info(`Status bar notification sent: ${title} to ${result.stats.totalUsers} users (${result.stats.onlineUsers} online) by admin ${req.admin.email}`);
-      res.json({ 
+      res.json({
         message: 'Status bar notification sent successfully',
         notification,
         stats: result.stats
       });
     } catch (error) {
       logger.error(`Error sending status bar notification - Admin: ${req.admin?.email}:`, error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to send status bar notification',
         context: { adminEmail: req.admin?.email }
       });
