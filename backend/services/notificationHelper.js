@@ -1,10 +1,12 @@
 const { PrismaClient } = require('@prisma/client');
 const logger = require('../utils/logger');
+const pushNotificationService = require('./pushNotificationService');
 
-// Pure Node.js notification system - no external push services needed
+// Firebase Cloud Messaging notification system
 // Notifications are stored in PostgreSQL and delivered via:
-// 1. Socket.IO for online users (real-time)
-// 2. Database polling for offline users (when they come online)
+// 1. Socket.IO for online users (real-time in-app)
+// 2. Firebase Cloud Messaging for status bar notifications (works when app is minimized/closed)
+// 3. Database polling for offline users (when they come online)
 
 const prisma = new PrismaClient();
 
@@ -180,16 +182,56 @@ class NotificationHelper {
     }
   }
 
-  // Legacy method name for compatibility - now just stores in DB
+  // Send Firebase Cloud Messaging push notifications to users with device tokens
   async sendPushNotifications(users, notification, data = {}) {
-    // Push notifications are now handled via database storage + polling
-    // This method is kept for backward compatibility but doesn't send external pushes
-    logger.info('📱 Push notifications disabled - using database storage + polling instead');
-    return { 
-      success: true, 
-      sent: 0, 
-      reason: 'Using database storage + polling (no external push service)' 
-    };
+    try {
+      // Filter users with valid FCM device tokens
+      const usersWithTokens = users.filter(u => 
+        u.deviceToken && 
+        u.deviceToken.length > 10 && 
+        u.deviceToken !== 'null' && 
+        u.deviceToken !== 'undefined'
+      );
+
+      if (usersWithTokens.length === 0) {
+        logger.info('📱 No users with valid FCM tokens found');
+        return { 
+          success: true, 
+          sent: 0, 
+          reason: 'No users with valid FCM tokens' 
+        };
+      }
+
+      const deviceTokens = usersWithTokens.map(u => u.deviceToken);
+      
+      logger.info(`📱 Sending Firebase push notifications to ${deviceTokens.length} devices`);
+
+      const result = await pushNotificationService.sendToDevices(deviceTokens, {
+        title: notification.title,
+        message: notification.message,
+        type: notification.type || 'general'
+      });
+
+      if (result.success) {
+        logger.info(`✅ Firebase push sent to ${result.sentTo} devices`);
+      } else {
+        logger.error(`❌ Firebase push failed: ${result.error}`);
+      }
+
+      return { 
+        success: result.success, 
+        sent: result.sentTo || 0,
+        failureCount: result.failureCount || 0,
+        deliveryMethod: 'firebase_cloud_messaging'
+      };
+    } catch (error) {
+      logger.error('❌ Error sending Firebase push notifications:', error);
+      return { 
+        success: false, 
+        sent: 0, 
+        error: error.message 
+      };
+    }
   }
 
   async sendCompleteNotification(io, notificationId, title, message, type, targetUserIds = null, sendPush = true) {
@@ -237,18 +279,27 @@ class NotificationHelper {
 
       // Store notifications for offline users (they'll poll when coming online)
       let offlineStorageResult = { success: true, storedCount: 0 };
+      offlineStorageResult = await this.storeNotificationsForOfflineUsers(
+        users,
+        onlineUserIds,
+        notificationId,
+        title,
+        message,
+        type
+      );
+
+      const offlineStoredCount = offlineStorageResult.storedCount || 0;
+
+      // Send Firebase push notifications to ALL users with device tokens
+      // This ensures notifications appear on device status bar even when app is minimized/closed
+      let pushResult = { success: true, sent: 0 };
       if (sendPush) {
-        offlineStorageResult = await this.storeNotificationsForOfflineUsers(
-          users,
-          onlineUserIds,
-          notificationId,
+        pushResult = await this.sendPushNotifications(users, {
           title,
           message,
           type
-        );
+        });
       }
-
-      const offlineStoredCount = offlineStorageResult.storedCount || 0;
 
       // Mark deliveredAt for online users in DB
       try {
@@ -275,12 +326,13 @@ class NotificationHelper {
         socketEmissions: onlineCount,
         offline: users.length - onlineCount,
         offlineUsers: offlineStoredCount,
-        pushed: 0, // No external push service
-        pushNotificationsSent: 0, // Using DB storage instead
-        offlineStored: offlineStoredCount // New field for DB-stored notifications
+        pushed: pushResult.sent || 0,
+        pushNotificationsSent: pushResult.sent || 0,
+        offlineStored: offlineStoredCount,
+        deliveryMethod: 'firebase_cloud_messaging'
       });
 
-      logger.info(`✅ Notification sent: ${title} to ${users.length} users (${onlineCount} online, ${offlineStoredCount} stored for offline)`);
+      logger.info(`✅ Notification sent: ${title} to ${users.length} users (${onlineCount} online, ${pushResult.sent || 0} push sent, ${offlineStoredCount} stored for offline)`);
 
       return {
         success: true,
@@ -290,8 +342,9 @@ class NotificationHelper {
           userNotificationsCreated: createResult.count,
           socketEmissions: onlineCount,
           offlineUsers: offlineStoredCount,
-          offlineStored: offlineStoredCount, // Notifications stored in DB for offline users
-          pushNotificationsSent: 0 // No external push service
+          offlineStored: offlineStoredCount,
+          pushNotificationsSent: pushResult.sent || 0,
+          deliveryMethod: 'firebase_cloud_messaging'
         }
       };
     } catch (error) {
@@ -339,13 +392,22 @@ class NotificationHelper {
 
       const socketResult = await this.emitToUsers(io, users, 'status-bar-notification', statusBarPayload);
 
+      // Send Firebase push notifications for status bar display on device
+      const pushResult = await this.sendPushNotifications(users, {
+        title,
+        message,
+        type: 'status_bar'
+      });
+
       await this.emitToAdmin(io, 'status-bar-notification-sent', {
         notificationId,
         sentTo: users.length,
-        online: socketResult.emittedCount || 0
+        online: socketResult.emittedCount || 0,
+        pushNotificationsSent: pushResult.sent || 0,
+        deliveryMethod: 'firebase_cloud_messaging'
       });
 
-      logger.info(`Status bar notification sent: ${title} to ${users.length} users`);
+      logger.info(`Status bar notification sent: ${title} to ${users.length} users (${pushResult.sent || 0} push sent)`);
 
       return {
         success: true,
@@ -353,7 +415,9 @@ class NotificationHelper {
         stats: {
           totalUsers: users.length,
           onlineUsers: socketResult.emittedCount || 0,
-          offlineUsers: socketResult.offlineCount || 0
+          offlineUsers: socketResult.offlineCount || 0,
+          pushNotificationsSent: pushResult.sent || 0,
+          deliveryMethod: 'firebase_cloud_messaging'
         }
       };
     } catch (error) {

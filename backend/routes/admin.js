@@ -57,13 +57,15 @@ router.get('/diagnostic/device-tokens', authMiddleware, adminOnly, async (req, r
       orderBy: { createdAt: 'desc' }
     });
 
+    const firebaseConfigured = !!(process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL);
+    
     const diagnosis = {
       totalUsers,
       usersWithTokens,
       activatedUsers,
       activeUsersWithTokens,
       percentage: totalUsers > 0 ? Math.round((usersWithTokens / totalUsers) * 100) : 0,
-      pushyApiKeyConfigured: !!process.env.PUSHY_SECRET_API_KEY,
+      firebaseConfigured: firebaseConfigured,
       sampleUsers: sampleUsers.map(u => ({
         id: u.uniqueUserId || u.id,
         deviceId: u.deviceId,
@@ -77,16 +79,16 @@ router.get('/diagnostic/device-tokens', authMiddleware, adminOnly, async (req, r
     logger.info('📊 Device token diagnostic requested by admin');
     logger.info(`   Total users: ${totalUsers}`);
     logger.info(`   Users with tokens: ${usersWithTokens}`);
-    logger.info(`   Pushy API key: ${diagnosis.pushyApiKeyConfigured ? 'Configured ✅' : 'NOT configured ❌'}`);
+    logger.info(`   Firebase: ${firebaseConfigured ? 'Configured ✅' : 'NOT configured ❌'}`);
 
     res.json({
       success: true,
       diagnosis,
       recommendation: usersWithTokens === 0 
-        ? 'Users need to open the Supasoka app to register device tokens'
-        : !diagnosis.pushyApiKeyConfigured
-        ? 'PUSHY_SECRET_API_KEY environment variable not set - redeploy service'
-        : 'System ready to send push notifications'
+        ? 'Users need to open the Supasoka app to register FCM device tokens'
+        : !firebaseConfigured
+        ? 'Firebase environment variables not set (FIREBASE_PROJECT_ID, FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL) - redeploy service'
+        : 'System ready to send Firebase push notifications'
     });
   } catch (error) {
     logger.error('❌ Error in device token diagnostic:', error);
@@ -348,15 +350,15 @@ router.post('/notifications/send-realtime',
       const stats = {
         totalUsers,
         sentTo: totalUsers,
-        socketEmissions: connectedSockets, // All connected sockets received broadcast
+        socketEmissions: connectedSockets,
         online: connectedSockets,
         offlineUsers,
         offline: offlineUsers,
-        connectedSockets, // New: total connected sockets
-        usersInRooms: socketEmissions, // Users who joined their specific room
-        pushNotificationsSent: 0, // No external push service
+        connectedSockets,
+        usersInRooms: socketEmissions,
+        pushNotificationsSent: pushNotificationsSent,
         userNotificationsCreated: userNotificationsResult.count,
-        deliveryMethod: 'socket_broadcast_and_db_polling'
+        deliveryMethod: 'firebase_cloud_messaging'
       };
 
       logger.info(`📊 Notification stats: ${JSON.stringify(stats)}`);
