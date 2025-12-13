@@ -16,6 +16,88 @@ const getClientInfo = (req) => ({
   userAgent: req.headers['user-agent'] || 'unknown'
 });
 
+// Check device tokens diagnostic endpoint
+router.get('/diagnostic/device-tokens', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const totalUsers = await prisma.user.count();
+    
+    const usersWithTokens = await prisma.user.count({
+      where: {
+        deviceToken: {
+          not: null,
+          notIn: ['', 'null', 'undefined']
+        }
+      }
+    });
+
+    const activatedUsers = await prisma.user.count({
+      where: { isActivated: true }
+    });
+
+    const activeUsersWithTokens = await prisma.user.count({
+      where: {
+        isActivated: true,
+        deviceToken: {
+          not: null,
+          notIn: ['', 'null', 'undefined']
+        }
+      }
+    });
+
+    const sampleUsers = await prisma.user.findMany({
+      take: 5,
+      select: {
+        id: true,
+        uniqueUserId: true,
+        deviceId: true,
+        deviceToken: true,
+        isActivated: true,
+        createdAt: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const diagnosis = {
+      totalUsers,
+      usersWithTokens,
+      activatedUsers,
+      activeUsersWithTokens,
+      percentage: totalUsers > 0 ? Math.round((usersWithTokens / totalUsers) * 100) : 0,
+      pushyApiKeyConfigured: !!process.env.PUSHY_SECRET_API_KEY,
+      sampleUsers: sampleUsers.map(u => ({
+        id: u.uniqueUserId || u.id,
+        deviceId: u.deviceId,
+        hasToken: !!u.deviceToken,
+        tokenPreview: u.deviceToken ? u.deviceToken.substring(0, 20) + '...' : null,
+        isActivated: u.isActivated,
+        createdAt: u.createdAt
+      }))
+    };
+
+    logger.info('📊 Device token diagnostic requested by admin');
+    logger.info(`   Total users: ${totalUsers}`);
+    logger.info(`   Users with tokens: ${usersWithTokens}`);
+    logger.info(`   Pushy API key: ${diagnosis.pushyApiKeyConfigured ? 'Configured ✅' : 'NOT configured ❌'}`);
+
+    res.json({
+      success: true,
+      diagnosis,
+      recommendation: usersWithTokens === 0 
+        ? 'Users need to open the Supasoka app to register device tokens'
+        : !diagnosis.pushyApiKeyConfigured
+        ? 'PUSHY_SECRET_API_KEY environment variable not set - redeploy service'
+        : 'System ready to send push notifications'
+    });
+  } catch (error) {
+    logger.error('❌ Error in device token diagnostic:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to get diagnostic info',
+      details: error.message 
+    });
+  }
+});
+
 // Get admin profile
 router.get('/profile', authMiddleware, adminOnly, async (req, res) => {
   try {
@@ -1503,93 +1585,170 @@ router.post('/notifications/send-realtime',
         }
       });
 
+      // Get IO instance for socket notifications
+      const io = req.app.get('io');
+      const notificationPayload = {
+        id: notification.id,
+        title,
+        message,
+        type,
+        priority,
+        createdAt: notification.createdAt,
+        timestamp: new Date().toISOString()
+      };
+
+      // Track delivery statistics
+      let totalUsers = 0;
+      let onlineUsers = 0;
+      let offlineUsers = 0;
+      let pushSent = 0;
+      let pushFailed = 0;
+
       // Create user notifications for tracking
       let userNotifications = [];
+      let targetedUsers = [];
+
       if (targetUsers && targetUsers.length > 0) {
         // Send to specific users
-        const users = await prisma.user.findMany({
+        targetedUsers = await prisma.user.findMany({
           where: {
             OR: [
               { id: { in: targetUsers } },
               { uniqueUserId: { in: targetUsers } }
-            ]
+            ],
+            isBlocked: false
+          },
+          select: {
+            id: true,
+            deviceToken: true,
+            uniqueUserId: true,
+            deviceId: true
           }
         });
+      } else {
+        // Send to all activated users
+        targetedUsers = await prisma.user.findMany({
+          where: { 
+            isActivated: true,
+            isBlocked: false
+          },
+          select: {
+            id: true,
+            deviceToken: true,
+            uniqueUserId: true,
+            deviceId: true
+          }
+        });
+      }
 
-        userNotifications = await Promise.all(
-          users.map(user =>
-            prisma.userNotification.create({
-              data: {
-                userId: user.id,
-                notificationId: notification.id
-              }
-            })
-          )
-        );
+      totalUsers = targetedUsers.length;
 
-        // Emit to specific users with multiple event types for compatibility
-        const io = req.app.get('io');
-        const notificationPayload = {
-          id: notification.id,
-          title,
-          message,
-          type,
-          priority,
-          createdAt: notification.createdAt,
-          timestamp: new Date().toISOString()
-        };
+      // Create user notification records
+      userNotifications = await Promise.all(
+        targetedUsers.map(user =>
+          prisma.userNotification.create({
+            data: {
+              userId: user.id,
+              notificationId: notification.id,
+              deliveredAt: new Date()
+            }
+          })
+        )
+      );
 
-        users.forEach(user => {
+      // Send WebSocket notifications to online users
+      const connectedSockets = io.sockets.sockets;
+      targetedUsers.forEach(user => {
+        // Check if user is online via socket
+        const userRooms = Array.from(connectedSockets.values())
+          .filter(socket => socket.rooms.has(`user-${user.id}`));
+        
+        if (userRooms.length > 0) {
+          onlineUsers++;
           // Emit multiple events to ensure notification is received
           io.to(`user-${user.id}`).emit('notification', notificationPayload);
           io.to(`user-${user.id}`).emit('immediate-notification', notificationPayload);
           io.to(`user-${user.id}`).emit('new-notification', notificationPayload);
-        });
+        } else {
+          offlineUsers++;
+        }
+      });
+
+      // Send push notifications to ALL users (online and offline)
+      // This ensures offline users get notifications in their status bar
+      const usersWithTokens = targetedUsers.filter(u => u.deviceToken);
+      
+      if (usersWithTokens.length > 0) {
+        logger.info(`📱 Sending push notifications to ${usersWithTokens.length} users with device tokens`);
+        
+        try {
+          // Send push notifications using the push notification service
+          const pushResult = await pushNotificationService.sendToAllUsers(
+            {
+              title,
+              message,
+              type,
+              priority,
+              notificationId: notification.id
+            },
+            prisma
+          );
+
+          if (pushResult.success) {
+            pushSent = pushResult.sentCount || pushResult.sentTo || 0;
+            logger.info(`✅ Push notifications sent successfully to ${pushSent} devices`);
+          } else {
+            logger.warn(`⚠️ Push notification service returned: ${pushResult.message || 'Unknown error'}`);
+            pushFailed = usersWithTokens.length;
+          }
+        } catch (pushError) {
+          logger.error('❌ Error sending push notifications:', pushError);
+          pushFailed = usersWithTokens.length;
+        }
       } else {
-        // Send to all users
-        const allUsers = await prisma.user.findMany({
-          where: { isActivated: true },
-          select: { id: true }
-        });
-
-        userNotifications = await Promise.all(
-          allUsers.map(user =>
-            prisma.userNotification.create({
-              data: {
-                userId: user.id,
-                notificationId: notification.id
-              }
-            })
-          )
-        );
-
-        // Emit to all connected users with multiple event types for compatibility
-        const io = req.app.get('io');
-        const notificationPayload = {
-          id: notification.id,
-          title,
-          message,
-          type,
-          priority,
-          createdAt: notification.createdAt,
-          timestamp: new Date().toISOString()
-        };
-
-        // Emit multiple events to ensure notification is received by all users
-        io.emit('notification', notificationPayload);
-        io.emit('immediate-notification', notificationPayload);
-        io.emit('new-notification', notificationPayload);
+        logger.warn('⚠️ No users with device tokens found for push notifications');
       }
 
-      logger.info(`Real-time notification sent by ${req.admin.email}: ${title}`);
+      // Log audit trail
+      await auditLogService.log({
+        adminId: req.admin.id.toString(),
+        adminEmail: req.admin.email,
+        action: 'notification_send',
+        entityType: 'notification',
+        entityId: notification.id,
+        details: `Sent notification "${title}" to ${totalUsers} users (${onlineUsers} online, ${offlineUsers} offline, ${pushSent} push sent)`,
+        ipAddress: getClientInfo(req).ipAddress,
+        userAgent: getClientInfo(req).userAgent
+      });
+
+      logger.info(`📢 Notification sent by ${req.admin.email}: "${title}"`);
+      logger.info(`   📊 Total users: ${totalUsers}`);
+      logger.info(`   🟢 Online users: ${onlineUsers}`);
+      logger.info(`   🔴 Offline users: ${offlineUsers}`);
+      logger.info(`   📱 Push sent: ${pushSent}`);
+      logger.info(`   ❌ Push failed: ${pushFailed}`);
+
       res.json({
+        success: true,
         notification,
-        sentTo: userNotifications.length,
-        message: `Notification sent to ${userNotifications.length} users`
+        stats: {
+          totalUsers,
+          onlineUsers,
+          offlineUsers,
+          pushSent,
+          pushFailed,
+          socketSent: onlineUsers,
+          usersWithTokens: usersWithTokens.length
+        },
+        message: `Notification sent to ${totalUsers} users (${onlineUsers} online, ${offlineUsers} offline, ${pushSent} push sent)`
       });
     } catch (error) {
-      logger.error('Error sending real-time notification:', error);
-      res.status(500).json({ error: 'Failed to send notification' });
+      logger.error('❌ Error sending real-time notification:', error);
+      res.status(500).json({ 
+        success: false,
+        error: 'Failed to send notification',
+        details: error.message 
+      });
     }
   }
 );
