@@ -7,6 +7,9 @@ import PushNotification, { Importance } from 'react-native-push-notification';
 // API URL for fetching pending notifications
 const API_BASE_URL = 'https://supasoka-backend.onrender.com/api';
 
+// Background polling interval (30 seconds) - checks for new notifications even when app is minimized
+const BACKGROUND_POLL_INTERVAL = 30000;
+
 const NotificationContext = createContext();
 
 const SOCKET_URLS = [
@@ -24,6 +27,7 @@ export const NotificationProvider = ({ children }) => {
   const socketRef = useRef(null);
   const currentUrlIndex = useRef(0);
   const deviceTokenRef = useRef(null);
+  const backgroundPollIntervalRef = useRef(null);
 
   const appStateRef = useRef(AppState.currentState);
 
@@ -33,6 +37,9 @@ export const NotificationProvider = ({ children }) => {
 
     loadNotifications();
     connectSocket();
+    
+    // Start background polling for notifications (works even when app is minimized)
+    startBackgroundPolling();
 
     // Expose showNotification globally
     global.showNotification = showNotification;
@@ -44,6 +51,8 @@ export const NotificationProvider = ({ children }) => {
       if (socketRef.current) {
         socketRef.current.disconnect();
       }
+      // Stop background polling
+      stopBackgroundPolling();
       // Clean up global reference
       delete global.showNotification;
       // Clean up AppState listener
@@ -59,6 +68,72 @@ export const NotificationProvider = ({ children }) => {
       await fetchPendingNotifications();
     }
     appStateRef.current = nextAppState;
+  };
+
+  // Start background polling - polls server every 30 seconds for new notifications
+  // This allows notifications to show in status bar even when app is minimized
+  const startBackgroundPolling = () => {
+    console.log('🔄 Starting background notification polling...');
+    
+    // Clear any existing interval
+    if (backgroundPollIntervalRef.current) {
+      clearInterval(backgroundPollIntervalRef.current);
+    }
+    
+    // Poll every 30 seconds
+    backgroundPollIntervalRef.current = setInterval(async () => {
+      console.log('🔄 Background poll: checking for new notifications...');
+      await fetchPendingNotificationsBackground();
+    }, BACKGROUND_POLL_INTERVAL);
+  };
+
+  // Stop background polling
+  const stopBackgroundPolling = () => {
+    if (backgroundPollIntervalRef.current) {
+      clearInterval(backgroundPollIntervalRef.current);
+      backgroundPollIntervalRef.current = null;
+      console.log('⏹️ Background polling stopped');
+    }
+  };
+
+  // Fetch pending notifications in background (silent, for status bar display)
+  const fetchPendingNotificationsBackground = async () => {
+    try {
+      const authToken = await AsyncStorage.getItem('authToken');
+      if (!authToken) {
+        return;
+      }
+      
+      const response = await fetch(`${API_BASE_URL}/notifications/pending?markDelivered=true`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        if (data.success && data.notifications && data.notifications.length > 0) {
+          console.log(`📬 Background poll: ${data.notifications.length} new notifications`);
+          
+          // Show each notification in status bar
+          for (const notification of data.notifications) {
+            showNotification({
+              id: notification.id,
+              title: notification.title,
+              message: notification.message,
+              type: notification.type,
+              timestamp: notification.timestamp
+            });
+          }
+        }
+      }
+    } catch (error) {
+      // Silent fail for background polling
+      console.log('🔄 Background poll failed (will retry):', error.message);
+    }
   };
 
   // Request notification permission for Android 13+
