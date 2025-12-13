@@ -1,6 +1,10 @@
 const { PrismaClient } = require('@prisma/client');
-const pushyService = require('./pushyService');
 const logger = require('../utils/logger');
+
+// Pure Node.js notification system - no external push services needed
+// Notifications are stored in PostgreSQL and delivered via:
+// 1. Socket.IO for online users (real-time)
+// 2. Database polling for offline users (when they come online)
 
 const prisma = new PrismaClient();
 
@@ -14,7 +18,7 @@ class NotificationHelper {
       const userNotifications = userIds.map(userId => ({
         userId,
         notificationId,
-        deliveredAt: new Date()
+        deliveredAt: null
       }));
 
       await prisma.userNotification.createMany({
@@ -75,14 +79,16 @@ class NotificationHelper {
 
     try {
       let emittedCount = 0;
+      const onlineUserIds = [];
 
       for (const user of users) {
         const room = `user-${user.id}`;
         const socketsInRoom = await io.in(room).fetchSockets();
-        
+
         if (socketsInRoom.length > 0) {
           io.to(room).emit(eventName, payload);
           emittedCount++;
+          onlineUserIds.push(user.id);
         }
       }
 
@@ -92,7 +98,8 @@ class NotificationHelper {
         success: true, 
         emittedCount, 
         totalUsers: users.length,
-        offlineCount: users.length - emittedCount
+        offlineCount: users.length - emittedCount,
+        onlineUserIds
       };
     } catch (error) {
       logger.error(`Failed to emit '${eventName}' to users:`, error);
@@ -107,10 +114,14 @@ class NotificationHelper {
     }
 
     try {
+      // Broadcast to ALL connected sockets
       io.emit(eventName, payload);
       
+      // Also emit immediate-notification for status bar display
+      io.emit('immediate-notification', payload);
+      
       const sockets = await io.fetchSockets();
-      logger.info(`Broadcasted '${eventName}' to ${sockets.length} connected clients`);
+      logger.info(`📢 Broadcasted '${eventName}' to ${sockets.length} connected clients`);
       
       return { success: true, connectedClients: sockets.length };
     } catch (error) {
@@ -138,34 +149,47 @@ class NotificationHelper {
     }
   }
 
-  async sendPushNotifications(users, notification, data = {}) {
-    const deviceTokens = users
-      .map(u => u.deviceToken)
-      .filter(token => token && typeof token === 'string');
-
-    if (deviceTokens.length === 0) {
-      logger.info('No device tokens available for push notifications');
-      return { success: true, sent: 0, reason: 'No device tokens' };
-    }
-
+  // Store notifications for offline users in database
+  // They will be fetched when user comes online via polling
+  async storeNotificationsForOfflineUsers(users, onlineUserIds, notificationId, title, message, type) {
     try {
-      const result = await pushyService.sendToMultipleDevices(
-        deviceTokens,
-        notification,
-        data
-      );
+      // Get offline user IDs (users not currently connected via Socket.IO)
+      const offlineUserIds = users
+        .filter(u => !onlineUserIds.includes(u.id))
+        .map(u => u.id);
 
-      if (result.success) {
-        logger.info(`Push notifications sent to ${result.sentCount} devices`);
-      } else {
-        logger.warn(`Push notification failed: ${result.error}`);
+      if (offlineUserIds.length === 0) {
+        logger.info('All users are online, no offline storage needed');
+        return { success: true, storedCount: 0, reason: 'All users online' };
       }
 
-      return result;
+      // Mark these notifications as pending delivery for offline users
+      // The UserNotification records are already created, just need to ensure deliveredAt is null
+      // When user polls, they'll get notifications where deliveredAt is null
+      
+      logger.info(`📦 ${offlineUserIds.length} users are offline - notifications stored in DB for later delivery`);
+      
+      return { 
+        success: true, 
+        storedCount: offlineUserIds.length,
+        offlineUserIds 
+      };
     } catch (error) {
-      logger.error('Failed to send push notifications:', error);
+      logger.error('Failed to store notifications for offline users:', error);
       return { success: false, error: error.message };
     }
+  }
+
+  // Legacy method name for compatibility - now just stores in DB
+  async sendPushNotifications(users, notification, data = {}) {
+    // Push notifications are now handled via database storage + polling
+    // This method is kept for backward compatibility but doesn't send external pushes
+    logger.info('📱 Push notifications disabled - using database storage + polling instead');
+    return { 
+      success: true, 
+      sent: 0, 
+      reason: 'Using database storage + polling (no external push service)' 
+    };
   }
 
   async sendCompleteNotification(io, notificationId, title, message, type, targetUserIds = null, sendPush = true) {
@@ -208,17 +232,39 @@ class NotificationHelper {
         socketResult = await this.emitToAllUsers(io, 'new-notification', notificationPayload);
       }
 
-      let pushResult = { success: true, sentCount: 0, reason: 'Push disabled' };
+      const onlineCount = socketResult.emittedCount || socketResult.connectedClients || 0;
+      const onlineUserIds = socketResult.onlineUserIds || [];
+
+      // Store notifications for offline users (they'll poll when coming online)
+      let offlineStorageResult = { success: true, storedCount: 0 };
       if (sendPush) {
-        pushResult = await this.sendPushNotifications(
+        offlineStorageResult = await this.storeNotificationsForOfflineUsers(
           users,
-          { title, message, type },
-          { notificationId }
+          onlineUserIds,
+          notificationId,
+          title,
+          message,
+          type
         );
       }
 
-      const pushedCount = pushResult.sentCount || pushResult.sentTo || 0;
-      const onlineCount = socketResult.emittedCount || socketResult.connectedClients || 0;
+      const offlineStoredCount = offlineStorageResult.storedCount || 0;
+
+      // Mark deliveredAt for online users in DB
+      try {
+        const onlineIds = socketResult.onlineUserIds || [];
+        if (onlineIds.length > 0) {
+          await prisma.userNotification.updateMany({
+            where: {
+              userId: { in: onlineIds },
+              notificationId
+            },
+            data: { deliveredAt: new Date() }
+          });
+        }
+      } catch (dbErr) {
+        logger.error('Failed to mark deliveredAt for online users:', dbErr);
+      }
 
       // Emit to admin dashboard with both new and legacy keys for compatibility
       await this.emitToAdmin(io, 'notification-sent', {
@@ -228,12 +274,13 @@ class NotificationHelper {
         online: onlineCount,
         socketEmissions: onlineCount,
         offline: users.length - onlineCount,
-        offlineUsers: socketResult.offlineCount || (users.length - onlineCount),
-        pushed: pushedCount,
-        pushNotificationsSent: pushedCount
+        offlineUsers: offlineStoredCount,
+        pushed: 0, // No external push service
+        pushNotificationsSent: 0, // Using DB storage instead
+        offlineStored: offlineStoredCount // New field for DB-stored notifications
       });
 
-      logger.info(`Complete notification sent: ${title} to ${users.length} users`);
+      logger.info(`✅ Notification sent: ${title} to ${users.length} users (${onlineCount} online, ${offlineStoredCount} stored for offline)`);
 
       return {
         success: true,
@@ -242,8 +289,9 @@ class NotificationHelper {
           totalUsers: users.length,
           userNotificationsCreated: createResult.count,
           socketEmissions: onlineCount,
-          offlineUsers: socketResult.offlineCount || (users.length - onlineCount),
-          pushNotificationsSent: pushedCount
+          offlineUsers: offlineStoredCount,
+          offlineStored: offlineStoredCount, // Notifications stored in DB for offline users
+          pushNotificationsSent: 0 // No external push service
         }
       };
     } catch (error) {

@@ -164,7 +164,7 @@ const NotificationsScreen = () => {
       showCustomModal({
         type: 'success',
         title: 'Notification Sent!',
-        message: `Sent to ${stats.totalUsers || 0} users!\n${stats.socketEmissions || 0} online, ${stats.offlineUsers || 0} offline, ${stats.pushNotificationsSent || 0} push sent.`,
+        message: `Sent to ${stats.totalUsers || 0} users!\n${stats.socketEmissions || 0} online (real-time), ${stats.offlineUsers || 0} offline (will receive when online).`,
       });
 
       setModalVisible(false);

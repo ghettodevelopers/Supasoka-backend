@@ -4,8 +4,10 @@ const { PrismaClient } = require('@prisma/client');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
 const notificationHelper = require('../services/notificationHelper');
-const pushyService = require('../services/pushyService');
 const logger = require('../utils/logger');
+
+// Pure Node.js notification system - no external push services
+// Notifications delivered via Socket.IO (online) + DB polling (offline)
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -576,48 +578,32 @@ router.delete('/admin/:id',
   }
 );
 
-// Register device for notifications
+// Register device for notifications (simplified - no external push service)
 router.post('/register-device',
   authMiddleware,
   [
-    body('deviceToken').notEmpty().withMessage('Device token is required'),
+    body('deviceToken').optional(), // Now optional since we use DB polling
     body('deviceId').optional()
   ],
   async (req, res) => {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        logger.error(`Validation errors in device registration - User: ${req.user.id}`, errors.array());
-        return res.status(400).json({ errors: errors.array() });
-      }
-
       const { deviceToken, deviceId } = req.body;
       const userId = req.user.id;
 
-      const validation = await pushyService.validateDeviceToken(deviceToken);
-      
-      if (!validation.success) {
-        logger.error(`Invalid device token for user ${userId}:`, validation.error);
-        return res.status(400).json({ 
-          error: validation.error,
-          context: { userId }
-        });
-      }
-
+      // Update user with device info (for tracking purposes)
       await prisma.user.update({
         where: { id: userId },
         data: { 
-          deviceToken,
-          ...(deviceId && { deviceId })
+          ...(deviceToken && { deviceToken }),
+          ...(deviceId && { deviceId }),
+          lastActive: new Date()
         }
       });
 
-      await notificationService.subscribeToTopic(deviceToken, 'all_users');
-
-      logger.info(`Device token registered for user ${userId}`);
+      logger.info(`📱 Device registered for user ${userId} (using DB polling for notifications)`);
       res.json({ 
-        message: 'Device registered for notifications successfully',
-        deviceToken: deviceToken.substring(0, 10) + '...'
+        message: 'Device registered successfully',
+        notificationMethod: 'database_polling' // Inform client about notification method
       });
     } catch (error) {
       logger.error(`Error registering device - User: ${req.user?.id}:`, error);
@@ -628,6 +614,66 @@ router.post('/register-device',
     }
   }
 );
+
+// NEW: Fetch pending notifications for offline users (polling endpoint)
+// Users call this when they come online to get notifications they missed
+router.get('/pending', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { markDelivered = 'true' } = req.query;
+
+    // Get undelivered notifications for this user
+    const pendingNotifications = await prisma.userNotification.findMany({
+      where: {
+        userId,
+        deliveredAt: null // Not yet delivered
+      },
+      include: {
+        notification: true
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50 // Limit to last 50 pending notifications
+    });
+
+    // Mark as delivered if requested
+    if (markDelivered === 'true' && pendingNotifications.length > 0) {
+      const notificationIds = pendingNotifications.map(pn => pn.id);
+      await prisma.userNotification.updateMany({
+        where: {
+          id: { in: notificationIds }
+        },
+        data: {
+          deliveredAt: new Date()
+        }
+      });
+    }
+
+    // Format notifications for client
+    const notifications = pendingNotifications.map(pn => ({
+      id: pn.notification.id,
+      title: pn.notification.title,
+      message: pn.notification.message,
+      type: pn.notification.type,
+      timestamp: pn.notification.createdAt.toISOString(),
+      read: pn.isRead
+    }));
+
+    logger.info(`📬 User ${userId} fetched ${notifications.length} pending notifications`);
+
+    res.json({
+      success: true,
+      notifications,
+      count: notifications.length,
+      hasMore: pendingNotifications.length === 50
+    });
+  } catch (error) {
+    logger.error(`Error fetching pending notifications - User: ${req.user?.id}:`, error);
+    res.status(500).json({ 
+      error: 'Failed to fetch pending notifications',
+      context: { userId: req.user?.id }
+    });
+  }
+});
 
 // Test notification (Socket.IO real-time)
 router.post('/test-notification',
@@ -686,7 +732,7 @@ router.post('/test-notification',
   }
 );
 
-// Test push notification (Pushy)
+// Test notification (creates a test notification in DB and sends via Socket.IO)
 router.post('/test-push',
   authMiddleware,
   async (req, res) => {
@@ -696,56 +742,70 @@ router.post('/test-push',
         where: { id: userId },
         select: {
           id: true,
-          deviceToken: true
+          deviceId: true
         }
       });
 
       if (!user) {
-        logger.error(`Test push failed - User not found: ${userId}`);
+        logger.error(`Test notification failed - User not found: ${userId}`);
         return res.status(404).json({ 
           error: 'User not found',
           context: { userId }
         });
       }
 
-      if (!user.deviceToken) {
-        logger.warn(`Test push failed - No device token for user: ${userId}`);
-        return res.status(400).json({ 
-          error: 'No device token registered',
-          message: 'Please register your device token first',
-          context: { userId }
+      // Create test notification in database
+      const testNotification = await prisma.notification.create({
+        data: {
+          title: 'Test Notification',
+          message: 'Hii ni taarifa ya majaribio kutoka Supasoka!',
+          type: 'test',
+          sentAt: new Date()
+        }
+      });
+
+      // Create user notification record
+      await prisma.userNotification.create({
+        data: {
+          userId,
+          notificationId: testNotification.id,
+          deliveredAt: new Date() // Mark as delivered since we're sending now
+        }
+      });
+
+      // Try to send via Socket.IO if user is online
+      const io = req.app.get('io');
+      const socketsInRoom = await io.in(`user-${userId}`).fetchSockets();
+      const isOnline = socketsInRoom.length > 0;
+
+      if (isOnline) {
+        io.to(`user-${userId}`).emit('new-notification', {
+          id: testNotification.id,
+          title: testNotification.title,
+          message: testNotification.message,
+          type: testNotification.type,
+          timestamp: testNotification.createdAt.toISOString()
         });
       }
 
-      const result = await pushyService.sendToDevice(
-        user.deviceToken,
-        {
-          title: 'Test Push Notification',
-          message: 'This is a test push notification from Supasoka!',
-          type: 'test'
+      logger.info(`📱 Test notification sent to user ${userId} (online: ${isOnline})`);
+      res.json({ 
+        message: 'Test notification sent successfully',
+        notification: {
+          id: testNotification.id,
+          title: testNotification.title,
+          message: testNotification.message
         },
-        { userId }
-      );
-
-      if (result.success) {
-        logger.info(`Test push notification sent to user ${userId}`);
-        res.json({ 
-          message: 'Test push notification sent successfully',
-          result,
-          deviceToken: user.deviceToken.substring(0, 10) + '...'
-        });
-      } else {
-        logger.error(`Test push notification failed for user ${userId}:`, result.error);
-        res.status(500).json({ 
-          error: 'Failed to send push notification',
-          details: result.error,
-          context: { userId }
-        });
-      }
+        deliveryMethod: isOnline ? 'socket_realtime' : 'database_polling',
+        userStatus: {
+          online: isOnline,
+          connectedSockets: socketsInRoom.length
+        }
+      });
     } catch (error) {
-      logger.error(`Error sending test push notification - User: ${req.user?.id}:`, error);
+      logger.error(`Error sending test notification - User: ${req.user?.id}:`, error);
       res.status(500).json({ 
-        error: 'Failed to send test push notification',
+        error: 'Failed to send test notification',
         context: { userId: req.user?.id }
       });
     }

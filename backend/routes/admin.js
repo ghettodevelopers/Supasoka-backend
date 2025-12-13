@@ -289,11 +289,19 @@ router.post('/notifications/send-realtime',
         from: 'admin'
       };
 
+      // BROADCAST to ALL connected sockets (for users who may not have joined their room yet)
+      // This ensures all online users receive the notification
+      const allSockets = await io.fetchSockets();
+      if (allSockets.length > 0) {
+        io.emit('new-notification', notificationPayload);
+        io.emit('immediate-notification', notificationPayload);
+        logger.info(`📢 Broadcasted notification to ${allSockets.length} connected sockets`);
+      }
+
+      // Also send to specific user rooms and mark as delivered
       for (const user of users) {
         const socketsInRoom = await io.in(`user-${user.id}`).fetchSockets();
         if (socketsInRoom.length > 0) {
-          io.to(`user-${user.id}`).emit('new-notification', notificationPayload);
-          io.to(`user-${user.id}`).emit('immediate-notification', notificationPayload);
           socketEmissions++;
 
           // Mark as delivered for online users
@@ -309,7 +317,7 @@ router.post('/notifications/send-realtime',
         }
       }
 
-      logger.info(`📡 Sent to ${socketEmissions} online users via Socket.IO`);
+      logger.info(`📡 ${socketEmissions} users in their rooms, ${allSockets.length} total connected`);
 
       // Step 5: Send push notifications to all users with device tokens
       const usersWithTokens = users.filter(u => u.deviceToken);
@@ -335,17 +343,20 @@ router.post('/notifications/send-realtime',
       }
 
       // Step 6: Calculate stats
+      const connectedSockets = allSockets.length;
       const offlineUsers = totalUsers - socketEmissions;
       const stats = {
         totalUsers,
         sentTo: totalUsers,
-        socketEmissions,
-        online: socketEmissions,
+        socketEmissions: connectedSockets, // All connected sockets received broadcast
+        online: connectedSockets,
         offlineUsers,
         offline: offlineUsers,
-        pushNotificationsSent,
-        pushSent: pushNotificationsSent,
-        userNotificationsCreated: userNotificationsResult.count
+        connectedSockets, // New: total connected sockets
+        usersInRooms: socketEmissions, // Users who joined their specific room
+        pushNotificationsSent: 0, // No external push service
+        userNotificationsCreated: userNotificationsResult.count,
+        deliveryMethod: 'socket_broadcast_and_db_polling'
       };
 
       logger.info(`📊 Notification stats: ${JSON.stringify(stats)}`);

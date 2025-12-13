@@ -4,6 +4,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import io from 'socket.io-client';
 import PushNotification, { Importance } from 'react-native-push-notification';
 
+// API URL for fetching pending notifications
+const API_BASE_URL = 'https://supasoka-backend.onrender.com/api';
+
 const NotificationContext = createContext();
 
 const SOCKET_URLS = [
@@ -22,6 +25,8 @@ export const NotificationProvider = ({ children }) => {
   const currentUrlIndex = useRef(0);
   const deviceTokenRef = useRef(null);
 
+  const appStateRef = useRef(AppState.currentState);
+
   useEffect(() => {
     // Configure push notifications
     configurePushNotifications();
@@ -29,8 +34,11 @@ export const NotificationProvider = ({ children }) => {
     loadNotifications();
     connectSocket();
 
-    // Expose showNotification globally for Pushy service
+    // Expose showNotification globally
     global.showNotification = showNotification;
+    
+    // Listen for app state changes to fetch pending notifications when app comes to foreground
+    const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
 
     return () => {
       if (socketRef.current) {
@@ -38,8 +46,20 @@ export const NotificationProvider = ({ children }) => {
       }
       // Clean up global reference
       delete global.showNotification;
+      // Clean up AppState listener
+      appStateSubscription?.remove();
     };
   }, []);
+
+  // Handle app state changes - fetch pending notifications when app comes to foreground
+  const handleAppStateChange = async (nextAppState) => {
+    if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
+      console.log('📱 App came to foreground - checking for pending notifications...');
+      // Fetch any notifications that were sent while app was in background
+      await fetchPendingNotifications();
+    }
+    appStateRef.current = nextAppState;
+  };
 
   // Request notification permission for Android 13+
   const requestNotificationPermission = async () => {
@@ -270,6 +290,61 @@ export const NotificationProvider = ({ children }) => {
     }
   };
 
+  // Fetch pending notifications from server (for notifications sent while offline)
+  const fetchPendingNotifications = async () => {
+    try {
+      const authToken = await AsyncStorage.getItem('authToken');
+      if (!authToken) {
+        console.log('⚠️ No auth token, skipping pending notifications fetch');
+        return;
+      }
+
+      console.log('📬 Fetching pending notifications from server...');
+      
+      const response = await fetch(`${API_BASE_URL}/notifications/pending`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        if (data.success && data.notifications && data.notifications.length > 0) {
+          console.log(`📬 Received ${data.notifications.length} pending notifications`);
+          
+          // Show each pending notification
+          for (const notification of data.notifications) {
+            // Show in status bar
+            showNotification({
+              id: notification.id,
+              title: notification.title,
+              message: notification.message,
+              type: notification.type,
+              timestamp: notification.timestamp
+            });
+          }
+          
+          // Show toast summary if multiple notifications
+          if (data.notifications.length > 1 && Platform.OS === 'android') {
+            ToastAndroid.show(
+              `Una taarifa ${data.notifications.length} mpya`,
+              ToastAndroid.SHORT
+            );
+          }
+        } else {
+          console.log('📭 No pending notifications');
+        }
+      } else {
+        console.warn('⚠️ Failed to fetch pending notifications:', response.status);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching pending notifications:', error);
+    }
+  };
+
   const connectSocket = () => {
     const socketUrl = SOCKET_URLS[currentUrlIndex.current];
     console.log(`🔌 Connecting to socket: ${socketUrl}`);
@@ -282,12 +357,33 @@ export const NotificationProvider = ({ children }) => {
       timeout: 10000,
     });
 
-    socket.on('connect', () => {
+    socket.on('connect', async () => {
       console.log('✅ Socket connected');
       setConnected(true);
       
+      // CRITICAL: Join user room so backend can send notifications to this user
+      try {
+        const userStr = await AsyncStorage.getItem('user');
+        if (userStr) {
+          const user = JSON.parse(userStr);
+          if (user && user.id) {
+            socket.emit('join-user', user.id);
+            console.log(`📱 Joined user room: user-${user.id}`);
+          } else {
+            console.warn('⚠️ User object has no id, cannot join user room');
+          }
+        } else {
+          console.warn('⚠️ No user data found, cannot join user room');
+        }
+      } catch (error) {
+        console.error('❌ Error joining user room:', error);
+      }
+      
       // Register device token with backend when socket connects
       registerDeviceToken();
+      
+      // Fetch any pending notifications that were sent while offline
+      fetchPendingNotifications();
     });
 
     socket.on('disconnect', () => {
