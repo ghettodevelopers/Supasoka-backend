@@ -26,6 +26,17 @@
         android:value="ca-app-pub-5619803043988422~5036677593"
         tools:replace="android:value"/>
       
+      <!-- Push Notification Configuration - REQUIRED for status bar notifications -->
+      <meta-data 
+        android:name="com.dieam.reactnativepushnotification.notification_foreground"
+        android:value="true"/>
+      <meta-data 
+        android:name="com.dieam.reactnativepushnotification.notification_color"
+        android:resource="@color/notification_color"/>
+      <meta-data 
+        android:name="com.dieam.reactnativepushnotification.default_notification_channel_id"
+        android:value="supasoka-high-priority"/>
+      
       <!-- Push Notification Receivers -->
       <receiver 
         android:name="com.dieam.reactnativepushnotification.modules.RNPushNotificationActions"

@@ -168,6 +168,7 @@ export const NotificationProvider = ({ children }) => {
     await generateDeviceToken();
 
     // Create HIGH PRIORITY notification channel for Android (like WhatsApp/YouTube)
+    // CRITICAL: importance 4 = HIGH, importance 5 = MAX (for heads-up display)
     PushNotification.createChannel(
       {
         channelId: 'supasoka-high-priority',
@@ -175,7 +176,7 @@ export const NotificationProvider = ({ children }) => {
         channelDescription: 'Taarifa muhimu kutoka Supasoka - zinaonyeshwa juu ya screen',
         playSound: true,
         soundName: 'default',
-        importance: Importance.HIGH, // Use proper constant for heads-up notifications
+        importance: 4, // 4 = HIGH importance for heads-up notifications
         vibrate: true,
         vibration: 500,
         enableLights: true,
@@ -199,7 +200,7 @@ export const NotificationProvider = ({ children }) => {
         channelDescription: 'Taarifa za kawaida kutoka Supasoka',
         playSound: true,
         soundName: 'default',
-        importance: Importance.HIGH, // Changed to HIGH for better visibility
+        importance: 4, // 4 = HIGH for better visibility
         vibrate: true,
         enableLights: true,
         lightColor: '#3b82f6',
@@ -215,7 +216,7 @@ export const NotificationProvider = ({ children }) => {
         channelName: 'Supasoka Updates',
         channelDescription: 'Background updates',
         playSound: false,
-        importance: Importance.LOW,
+        importance: 2, // 2 = LOW
         vibrate: false,
       },
       (created) => console.log(`✅ Silent channel created: ${created}`)
@@ -918,10 +919,10 @@ export const NotificationProvider = ({ children }) => {
       priority: 'max',
       importance: 'high',
 
-      // Visual settings
+      // Visual settings - CRITICAL: smallIcon is REQUIRED for status bar display
       autoCancel: true,
       largeIcon: 'ic_launcher',
-      // smallIcon: 'ic_notification', // Removed - causes issues if icon doesn't exist
+      smallIcon: 'ic_notification', // REQUIRED for status bar - uses drawable/ic_notification.xml
       bigText: notification.message,
       subText: 'Supasoka',
       color: '#3b82f6',
