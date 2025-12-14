@@ -21,7 +21,13 @@ services:
     value: Ghettodevelopers@gmail.com
   - key: ADMIN_PASSWORD
     sync: false
-  - key: PUSHY_SECRET_API_KEY
+  - key: FCM_LEGACY_SERVER_KEY
+    sync: false
+  - key: FIREBASE_PROJECT_ID
+    sync: false
+  - key: FIREBASE_PRIVATE_KEY
+    sync: false
+  - key: FIREBASE_CLIENT_EMAIL
     sync: false
   - key: ALLOWED_ORIGINS
     value: https://supasoka-backend.onrender.com,capacitor://localhost,http://localhost:3000

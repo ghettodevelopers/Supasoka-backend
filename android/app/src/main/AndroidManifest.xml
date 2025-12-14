@@ -32,10 +32,12 @@
         android:resource="@mipmap/ic_launcher" />
       <meta-data
         android:name="com.google.firebase.messaging.default_notification_color"
-        android:resource="@color/notification_color" />
+        android:resource="@color/notification_color"
+        tools:replace="android:resource" />
       <meta-data
         android:name="com.google.firebase.messaging.default_notification_channel_id"
-        android:value="supasoka_notifications" />
+        android:value="supasoka_notifications"
+        tools:replace="android:value" />
       
       <activity
         android:name=".MainActivity"
@@ -52,7 +54,7 @@
       
       <!-- Firebase Cloud Messaging Service -->
       <service
-        android:name="com.supasoka.FirebaseMessagingService"
+        android:name=".SupasokaFirebaseMessagingService"
         android:exported="false">
         <intent-filter>
           <action android:name="com.google.firebase.MESSAGING_EVENT" />

@@ -11,6 +11,7 @@ const logger = require('../utils/logger');
 class PushNotificationService {
   constructor() {
     this.initialized = false;
+    this.initError = null;
     this.initializeFirebase();
   }
 
@@ -63,12 +64,22 @@ class PushNotificationService {
       });
 
       this.initialized = true;
+      this.initError = null;
       logger.info('✅ Firebase Admin SDK initialized successfully');
       logger.info(`📱 Project ID: ${serviceAccount.project_id}`);
     } catch (error) {
       logger.error('❌ Failed to initialize Firebase Admin SDK:', error);
       this.initialized = false;
+      this.initError = (error && (error.message || JSON.stringify(error))) || 'Unknown initialization error';
     }
+  }
+
+  isInitialized() {
+    return this.initialized && admin.apps.length > 0 && !this.initError;
+  }
+
+  getInitError() {
+    return this.initError;
   }
 
   /**
@@ -77,14 +88,7 @@ class PushNotificationService {
    * @param {Object} notification - Notification data {title, message, type}
    */
   async sendToDevices(deviceTokens, notification) {
-    if (!this.initialized) {
-      logger.error('❌ Firebase not initialized');
-      return {
-        success: false,
-        error: 'Firebase not initialized',
-        sentTo: 0
-      };
-    }
+    const { title, message, type = 'general' } = notification || {};
 
     if (!deviceTokens || deviceTokens.length === 0) {
       logger.warn('⚠️ No device tokens provided');
@@ -95,7 +99,70 @@ class PushNotificationService {
       };
     }
 
-    const { title, message, type = 'general' } = notification;
+    // If Firebase Admin is not initialized, attempt legacy FCM fallback if configured
+    if (!this.isInitialized()) {
+      logger.warn('⚠️ Firebase Admin not initialized; attempting legacy FCM fallback if configured');
+      if (process.env.FCM_LEGACY_SERVER_KEY) {
+        const fcmMessage = {
+          notification: {
+            title: title,
+            body: message,
+          },
+          data: {
+            type: type,
+            timestamp: new Date().toISOString(),
+          },
+          android: {
+            priority: 'high',
+            notification: {
+              channelId: 'supasoka_notifications',
+              priority: 'high',
+              sound: 'default',
+              defaultVibrateTimings: true,
+            }
+          },
+          apns: {
+            headers: {
+              'apns-push-type': 'alert',
+              'apns-priority': '10'
+            },
+            payload: {
+              aps: {
+                sound: 'default',
+                badge: 1,
+              }
+            }
+          }
+        };
+
+        try {
+          const fallbackResult = await this._sendViaLegacyFCM(deviceTokens, fcmMessage);
+          logger.info(`✅ Legacy FCM fallback sent: ${fallbackResult.successCount}/${deviceTokens.length}`);
+          return {
+            success: true,
+            sentTo: fallbackResult.successCount,
+            sentCount: fallbackResult.successCount,
+            failureCount: fallbackResult.failureCount,
+            message: `Sent to ${fallbackResult.successCount} devices (legacy_fcm)`,
+            deliveryMethod: 'legacy_fcm'
+          };
+        } catch (err) {
+          logger.error('❌ Legacy FCM fallback failed:', err);
+          return {
+            success: false,
+            error: err.message || 'Legacy FCM fallback failed',
+            sentTo: 0
+          };
+        }
+      }
+
+      logger.error('❌ Firebase not initialized and no legacy FCM key configured');
+      return {
+        success: false,
+        error: 'Firebase not initialized',
+        sentTo: 0
+      };
+    }
 
     try {
       logger.info(`📱 Sending FCM notification to ${deviceTokens.length} devices`);
@@ -145,12 +212,42 @@ class PushNotificationService {
       // Log failed tokens for cleanup
       if (response.failureCount > 0) {
         const failedTokens = [];
+        const invalidTokens = [];
+
         response.responses.forEach((resp, idx) => {
           if (!resp.success) {
-            failedTokens.push(deviceTokens[idx]);
-            logger.warn(`   Failed token: ${deviceTokens[idx].substring(0, 20)}... - ${resp.error?.message}`);
+            const token = deviceTokens[idx];
+            failedTokens.push(token);
+            const errMsg = resp.error?.message || resp.error?.code || 'Unknown error';
+            logger.warn(`   Failed token: ${token.substring(0, 20)}... - ${errMsg}`);
+
+            // Collect tokens which are invalid or not registered for cleanup
+            const msg = (resp.error && (resp.error.message || '')).toLowerCase();
+            if (msg.includes('registration-token-not-registered') || msg.includes('invalid-registration-token') || msg.includes('not-registered')) {
+              invalidTokens.push(token);
+            }
           }
         });
+
+        // Remove invalid tokens from DB (best-effort cleanup)
+        if (invalidTokens.length > 0) {
+          try {
+            const { PrismaClient } = require('@prisma/client');
+            const prisma = new PrismaClient();
+
+            for (const tok of invalidTokens) {
+              await prisma.user.updateMany({
+                where: { deviceToken: tok },
+                data: { deviceToken: null }
+              });
+              logger.info(`Removed invalid device token from DB: ${tok.substring(0, 20)}...`);
+            }
+
+            await prisma.$disconnect();
+          } catch (dbErr) {
+            logger.error('Error cleaning up invalid tokens:', dbErr);
+          }
+        }
       }
 
       return {
@@ -163,6 +260,38 @@ class PushNotificationService {
       };
     } catch (error) {
       logger.error('❌ Error sending FCM notification:', error);
+
+      // If this looks like a credentials problem and we have a legacy key, try fallback
+      const errMsg = (error && (error.message || JSON.stringify(error))) || '';
+      const credIssue = /invalid_grant|invalid jwt|credential|Token must be a short-lived token/i.test(errMsg);
+      if (credIssue) {
+        // record credential problem for diagnostics
+        this.initError = errMsg;
+      }
+
+      if (credIssue && process.env.FCM_LEGACY_SERVER_KEY) {
+        logger.warn('⚠️ Firebase credential error detected, attempting legacy FCM fallback');
+        try {
+          const fallbackResult = await this._sendViaLegacyFCM(deviceTokens, fcmMessage);
+          logger.info(`✅ Legacy FCM fallback sent: ${fallbackResult.successCount}/${deviceTokens.length}`);
+          return {
+            success: true,
+            sentTo: fallbackResult.successCount,
+            sentCount: fallbackResult.successCount,
+            failureCount: fallbackResult.failureCount,
+            message: `Sent to ${fallbackResult.successCount} devices (legacy_fcm_after_error)`,
+            deliveryMethod: 'legacy_fcm'
+          };
+        } catch (err) {
+          logger.error('❌ Legacy FCM fallback also failed:', err);
+          return {
+            success: false,
+            error: (err && err.message) || 'Legacy FCM fallback failed after firebase error',
+            sentTo: 0
+          };
+        }
+      }
+
       return {
         success: false,
         error: error.message,
@@ -176,6 +305,35 @@ class PushNotificationService {
    * @param {Object} notification - Notification data {title, message, type}
    * @param {Object} prisma - Prisma client instance
    */
+  async _sendViaLegacyFCM(deviceTokens, fcmMessage) {
+    const axios = require('axios');
+    const serverKey = process.env.FCM_LEGACY_SERVER_KEY;
+    if (!serverKey) throw new Error('FCM_LEGACY_SERVER_KEY not set');
+
+    const payload = {
+      registration_ids: deviceTokens,
+      notification: fcmMessage.notification || {},
+      data: fcmMessage.data || {},
+      android: fcmMessage.android || {},
+      apns: fcmMessage.apns || {},
+      priority: 'high'
+    };
+
+    const res = await axios.post('https://fcm.googleapis.com/fcm/send', payload, {
+      headers: {
+        Authorization: `key=${serverKey}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 10000
+    });
+
+    const data = res.data || {};
+    const successCount = data.success || 0;
+    const failureCount = data.failure || 0;
+
+    return { successCount, failureCount, raw: data };
+  }
+
   async sendToAllUsers(notification, prisma) {
     try {
       // Get all active users with device tokens

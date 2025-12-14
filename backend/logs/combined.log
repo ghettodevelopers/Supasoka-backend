@@ -4790,3 +4790,46 @@
 {"level":"info","message":"🚀 Supasoka Backend Server running on 0.0.0.0:10000","service":"supasoka-backend","timestamp":"2025-12-12T06:45:19.968Z"}
 {"level":"info","message":"📊 Environment: development","service":"supasoka-backend","timestamp":"2025-12-12T06:45:19.969Z"}
 {"level":"info","message":"🔗 Health check: http://localhost:10000/health","service":"supasoka-backend","timestamp":"2025-12-12T06:45:19.969Z"}
+{"level":"info","message":"📱 Loading Firebase credentials from JSON file","service":"supasoka-backend","timestamp":"2025-12-14T00:14:21.758Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully","service":"supasoka-backend","timestamp":"2025-12-14T00:14:21.939Z"}
+{"level":"info","message":"📱 Project ID: supasoka-18128","service":"supasoka-backend","timestamp":"2025-12-14T00:14:21.940Z"}
+{"level":"info","message":"📱 Loading Firebase credentials from JSON file","service":"supasoka-backend","timestamp":"2025-12-14T00:14:40.938Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully","service":"supasoka-backend","timestamp":"2025-12-14T00:14:41.022Z"}
+{"level":"info","message":"📱 Project ID: supasoka-18128","service":"supasoka-backend","timestamp":"2025-12-14T00:14:41.025Z"}
+{"level":"info","message":"📱 Loading Firebase credentials from JSON file","service":"supasoka-backend","timestamp":"2025-12-14T00:17:50.051Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully","service":"supasoka-backend","timestamp":"2025-12-14T00:17:50.123Z"}
+{"level":"info","message":"📱 Project ID: supasoka-18128","service":"supasoka-backend","timestamp":"2025-12-14T00:17:50.124Z"}
+{"level":"info","message":"📱 Sending FCM notification to 1 devices","service":"supasoka-backend","timestamp":"2025-12-14T00:17:50.125Z"}
+{"level":"info","message":"   Title: \"Test Notification\"","service":"supasoka-backend","timestamp":"2025-12-14T00:17:50.125Z"}
+{"level":"info","message":"   Message: \"This is a test notification sent from backend test script\"","service":"supasoka-backend","timestamp":"2025-12-14T00:17:50.126Z"}
+{"level":"info","message":"   Type: test","service":"supasoka-backend","timestamp":"2025-12-14T00:17:50.126Z"}
+{"level":"info","message":"✅ FCM notification sent successfully","service":"supasoka-backend","timestamp":"2025-12-14T00:17:51.484Z"}
+{"level":"info","message":"   Success: 0/1","service":"supasoka-backend","timestamp":"2025-12-14T00:17:51.485Z"}
+{"level":"info","message":"   Failed: 1","service":"supasoka-backend","timestamp":"2025-12-14T00:17:51.486Z"}
+{"level":"warn","message":"   Failed token: FCM_TEST_DEVICE_1765... - Credential implementation provided to initializeApp() via the \"credential\" property failed to fetch a valid Google OAuth2 access token with the following error: \"invalid_grant: Invalid JWT: Token must be a short-lived token (60 minutes) and in a reasonable timeframe. Check your iat and exp values in the JWT claim.\". There are two likely causes: (1) your server time is not properly synced or (2) your certificate key file has been revoked. To solve (1), re-sync the time on your server. To solve (2), make sure the key ID for your key file is still present at https://console.firebase.google.com/iam-admin/serviceaccounts/project. If not, generate a new key file at https://console.firebase.google.com/project/_/settings/serviceaccounts/adminsdk.","service":"supasoka-backend","timestamp":"2025-12-14T00:17:51.486Z"}
+{"level":"info","message":"📱 Loading Firebase credentials from JSON file","service":"supasoka-backend","timestamp":"2025-12-14T00:20:22.499Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully","service":"supasoka-backend","timestamp":"2025-12-14T00:20:22.574Z"}
+{"level":"info","message":"📱 Project ID: supasoka-18128","service":"supasoka-backend","timestamp":"2025-12-14T00:20:22.575Z"}
+{"level":"info","message":"📱 Sending FCM notification to 1 devices","service":"supasoka-backend","timestamp":"2025-12-14T00:20:22.576Z"}
+{"level":"info","message":"   Title: \"Test Notification\"","service":"supasoka-backend","timestamp":"2025-12-14T00:20:22.576Z"}
+{"level":"info","message":"   Message: \"This is a test notification sent from backend test script\"","service":"supasoka-backend","timestamp":"2025-12-14T00:20:22.577Z"}
+{"level":"info","message":"   Type: test","service":"supasoka-backend","timestamp":"2025-12-14T00:20:22.577Z"}
+{"level":"info","message":"✅ FCM notification sent successfully","service":"supasoka-backend","timestamp":"2025-12-14T00:20:23.510Z"}
+{"level":"info","message":"   Success: 0/1","service":"supasoka-backend","timestamp":"2025-12-14T00:20:23.511Z"}
+{"level":"info","message":"   Failed: 1","service":"supasoka-backend","timestamp":"2025-12-14T00:20:23.511Z"}
+{"level":"warn","message":"   Failed token: FCM_TEST_DEVICE_1765... - Credential implementation provided to initializeApp() via the \"credential\" property failed to fetch a valid Google OAuth2 access token with the following error: \"invalid_grant: Invalid JWT: Token must be a short-lived token (60 minutes) and in a reasonable timeframe. Check your iat and exp values in the JWT claim.\". There are two likely causes: (1) your server time is not properly synced or (2) your certificate key file has been revoked. To solve (1), re-sync the time on your server. To solve (2), make sure the key ID for your key file is still present at https://console.firebase.google.com/iam-admin/serviceaccounts/project. If not, generate a new key file at https://console.firebase.google.com/project/_/settings/serviceaccounts/adminsdk.","service":"supasoka-backend","timestamp":"2025-12-14T00:20:23.512Z"}
+                                                                                                                                                                                                                                                                                                                                                                                                                                       {"level":"info","message":"📱 Loading Firebase credentials from JSON file","service":"supasoka-backend","timestamp":"2025-12-14T05:17:55.139Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully","service":"supasoka-backend","timestamp":"2025-12-14T05:17:56.956Z"}
+{"level":"info","message":"📱 Project ID: supasoka-18128","service":"supasoka-backend","timestamp":"2025-12-14T05:17:56.956Z"}
+{"level":"info","message":"📱 Loading Firebase credentials from JSON file","service":"supasoka-backend","timestamp":"2025-12-14T06:37:59.346Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully","service":"supasoka-backend","timestamp":"2025-12-14T06:38:00.819Z"}
+{"level":"info","message":"📱 Project ID: supasoka-18128","service":"supasoka-backend","timestamp":"2025-12-14T06:38:00.820Z"}
+{"level":"info","message":"📱 Loading Firebase credentials from JSON file","service":"supasoka-backend","timestamp":"2025-12-14T06:38:55.714Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully","service":"supasoka-backend","timestamp":"2025-12-14T06:38:55.782Z"}
+{"level":"info","message":"📱 Project ID: supasoka-18128","service":"supasoka-backend","timestamp":"2025-12-14T06:38:55.783Z"}
+{"level":"info","message":"📱 Loading Firebase credentials from JSON file","service":"supasoka-backend","timestamp":"2025-12-14T06:44:39.619Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully","service":"supasoka-backend","timestamp":"2025-12-14T06:44:39.689Z"}
+{"level":"info","message":"📱 Project ID: supasoka-18128","service":"supasoka-backend","timestamp":"2025-12-14T06:44:39.691Z"}
+{"level":"info","message":"📱 Loading Firebase credentials from JSON file","service":"supasoka-backend","timestamp":"2025-12-14T06:52:53.755Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully","service":"supasoka-backend","timestamp":"2025-12-14T06:52:53.831Z"}
+{"level":"info","message":"📱 Project ID: supasoka-18128","service":"supasoka-backend","timestamp":"2025-12-14T06:52:53.832Z"}

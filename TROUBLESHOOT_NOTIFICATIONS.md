@@ -5,7 +5,24 @@
 - ✅ Added to Render.com environment variables
 - ❌ Notifications not working
 
+> Note: Backend now prefers Firebase Cloud Messaging via Firebase Admin SDK. If Firebase credentials are not configured, the backend can optionally use a legacy HTTP FCM route when `FCM_LEGACY_SERVER_KEY` is set. For production, configure Firebase Admin credentials and consider removing Pushy to simplify the notification stack.
+
 ## 🎯 Step-by-Step Debugging
+
+### Common credential error: invalid_grant
+
+If you see an error like:
+
+```
+invalid_grant: Invalid JWT: Token must be a short-lived token (60 minutes) and in a reasonable timeframe.
+```
+
+This indicates a problem with the Firebase service account credentials (or server time). Fixes:
+- Ensure the `firebase-service-account.json` used by the backend is a **current** service account key (regenerate from Firebase Console if revoked).
+- Ensure server time is correct (NTP sync).
+- For quick fallback while fixing credentials, set `FCM_LEGACY_SERVER_KEY` in your Render environment to a valid legacy FCM server key (from Firebase project settings -> Cloud Messaging) and redeploy. The backend will use the legacy HTTP FCM route as a fallback when credential errors occur.
+
+
 
 ### Step 1: Verify Render.com Environment Variable
 

@@ -58,14 +58,29 @@ router.get('/diagnostic/device-tokens', authMiddleware, adminOnly, async (req, r
     });
 
     const firebaseConfigured = !!(process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL);
-    
+    const firebaseInitialized = pushNotificationService.isInitialized();
+    const legacyFcmConfigured = !!process.env.FCM_LEGACY_SERVER_KEY;
+
+    // Check if device_token column exists in production database
+    let deviceTokenColumnExists = false;
+    try {
+      const col = await prisma.$queryRaw`SELECT COUNT(*) as cnt FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'device_token'`;
+      deviceTokenColumnExists = !!(col && col[0] && parseInt(col[0].cnt) > 0);
+    } catch (err) {
+      logger.warn('Could not verify device_token column existence:', err.message);
+    }
+
     const diagnosis = {
       totalUsers,
       usersWithTokens,
       activatedUsers,
       activeUsersWithTokens,
       percentage: totalUsers > 0 ? Math.round((usersWithTokens / totalUsers) * 100) : 0,
-      firebaseConfigured: firebaseConfigured,
+      firebaseConfigured,
+      firebaseInitialized,
+      legacyFcmConfigured,
+      deviceTokenColumnExists,
+      firebaseInitError: pushNotificationService.getInitError ? pushNotificationService.getInitError() : null,
       sampleUsers: sampleUsers.map(u => ({
         id: u.uniqueUserId || u.id,
         deviceId: u.deviceId,
@@ -79,7 +94,9 @@ router.get('/diagnostic/device-tokens', authMiddleware, adminOnly, async (req, r
     logger.info('📊 Device token diagnostic requested by admin');
     logger.info(`   Total users: ${totalUsers}`);
     logger.info(`   Users with tokens: ${usersWithTokens}`);
-    logger.info(`   Firebase: ${firebaseConfigured ? 'Configured ✅' : 'NOT configured ❌'}`);
+    logger.info(`   Firebase env: ${firebaseConfigured ? 'Configured ✅' : 'NOT configured ❌'}`);
+    logger.info(`   Firebase initialized: ${firebaseInitialized ? 'Yes ✅' : 'No ❌'}`);
+    logger.info(`   Legacy FCM key: ${legacyFcmConfigured ? 'Configured ✅' : 'Not configured'}`);
 
     res.json({
       success: true,
@@ -88,7 +105,9 @@ router.get('/diagnostic/device-tokens', authMiddleware, adminOnly, async (req, r
         ? 'Users need to open the Supasoka app to register FCM device tokens'
         : !firebaseConfigured
         ? 'Firebase environment variables not set (FIREBASE_PROJECT_ID, FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL) - redeploy service'
-        : 'System ready to send Firebase push notifications'
+        : !firebaseInitialized
+        ? 'Firebase Admin SDK not initialized. Check server logs for credential errors.'
+        : `System ready to send Firebase push notifications${legacyFcmConfigured ? ' (legacy FCM fallback configured)' : ''}`
     });
   } catch (error) {
     logger.error('❌ Error in device token diagnostic:', error);

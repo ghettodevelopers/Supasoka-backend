@@ -40,33 +40,71 @@ class NotificationHelper {
   async getTargetUsers(targetUserIds = null) {
     try {
       let users;
-      
-      if (targetUserIds && Array.isArray(targetUserIds) && targetUserIds.length > 0) {
-        users = await prisma.user.findMany({
-          where: {
-            id: { in: targetUserIds },
-            isBlocked: false
-          },
-          select: {
-            id: true,
-            deviceId: true,
-            deviceToken: true
-          }
-        });
-      } else {
-        users = await prisma.user.findMany({
-          where: {
-            isBlocked: false
-          },
-          select: {
-            id: true,
-            deviceId: true,
-            deviceToken: true
-          }
-        });
-      }
 
-      return { success: true, users };
+      // First try the Prisma client (preferred)
+      try {
+        if (targetUserIds && Array.isArray(targetUserIds) && targetUserIds.length > 0) {
+          users = await prisma.user.findMany({
+            where: {
+              id: { in: targetUserIds },
+              isBlocked: false
+            },
+            select: {
+              id: true,
+              deviceId: true,
+              deviceToken: true
+            }
+          });
+        } else {
+          users = await prisma.user.findMany({
+            where: {
+              isBlocked: false
+            },
+            select: {
+              id: true,
+              deviceId: true,
+              deviceToken: true
+            }
+          });
+        }
+
+        return { success: true, users };
+      } catch (prismaErr) {
+        // Handle schema mismatch where `deviceToken` might not exist in older Prisma client
+        logger.warn('Prisma select with deviceToken failed, falling back to raw SQL:', prismaErr.message);
+
+        // Build a safe raw SQL query to fetch users and their device_token column (if present)
+        const whereClause = targetUserIds && Array.isArray(targetUserIds) && targetUserIds.length > 0
+          ? `WHERE id = ANY($1::text[]) AND is_blocked = false`
+          : `WHERE is_blocked = false`;
+
+        const params = targetUserIds && targetUserIds.length > 0 ? [targetUserIds] : [];
+
+        // Check if `device_token` column exists
+        const colCheck = await prisma.$queryRawUnsafe(
+          `SELECT COUNT(*) as cnt FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'device_token'`
+        );
+        const hasDeviceToken = (colCheck && colCheck[0] && parseInt(colCheck[0].cnt) > 0) || false;
+
+        let rows;
+        if (hasDeviceToken) {
+          rows = await prisma.$queryRawUnsafe(`
+            SELECT id, device_id as "deviceId", device_token as "deviceToken"
+            FROM users
+            ${whereClause}
+          `, ...params);
+        } else {
+          // Column missing in DB - return users without tokens
+          rows = await prisma.$queryRawUnsafe(`
+            SELECT id, device_id as "deviceId"
+            FROM users
+            ${whereClause}
+          `, ...params);
+        }
+
+        const mapped = rows.map(r => ({ id: r.id, deviceId: r.deviceId, deviceToken: r.deviceToken || null }));
+        return { success: true, users: mapped };
+      }
     } catch (error) {
       logger.error('Failed to get target users:', error);
       return { success: false, error: error.message, users: [] };

@@ -537,9 +537,16 @@ router.put('/admin/:id',
       const notificationId = req.params.id;
       const updateData = req.body;
 
+      // Whitelist fields allowed for update to avoid Prisma schema mismatch
+      const allowed = ['title', 'message', 'type', 'isActive', 'scheduledAt', 'sentAt', 'targetUsers'];
+      const dataToUpdate = {};
+      allowed.forEach(k => {
+        if (updateData[k] !== undefined) dataToUpdate[k] = updateData[k];
+      });
+
       const notification = await prisma.notification.update({
         where: { id: notificationId },
-        data: updateData
+        data: dataToUpdate
       });
 
       const io = req.app.get('io');
@@ -600,10 +607,11 @@ router.post('/register-device',
         }
       });
 
-      logger.info(`📱 Device registered for user ${userId} (using DB polling for notifications)`);
+      const method = deviceToken ? 'firebase' : 'database_polling';
+      logger.info(`📱 Device registered for user ${userId} (method: ${method})`);
       res.json({
         message: 'Device registered successfully',
-        notificationMethod: 'database_polling' // Inform client about notification method
+        notificationMethod: method // Inform client about notification method
       });
     } catch (error) {
       logger.error(`Error registering device - User: ${req.user?.id}:`, error);
