@@ -4833,3 +4833,41 @@
 {"level":"info","message":"📱 Loading Firebase credentials from JSON file","service":"supasoka-backend","timestamp":"2025-12-14T06:52:53.755Z"}
 {"level":"info","message":"✅ Firebase Admin SDK initialized successfully","service":"supasoka-backend","timestamp":"2025-12-14T06:52:53.831Z"}
 {"level":"info","message":"📱 Project ID: supasoka-18128","service":"supasoka-backend","timestamp":"2025-12-14T06:52:53.832Z"}
+{"level":"info","message":"📱 Loading Firebase credentials from JSON file","service":"supasoka-backend","timestamp":"2025-12-15T15:13:24.091Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully","service":"supasoka-backend","timestamp":"2025-12-15T15:13:26.785Z"}
+{"level":"info","message":"📱 Project ID: supasoka-18128","service":"supasoka-backend","timestamp":"2025-12-15T15:13:26.785Z"}
+{"level":"info","message":"📱 Loading Firebase credentials from JSON file","service":"supasoka-backend","timestamp":"2025-12-15T15:19:32.432Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully","service":"supasoka-backend","timestamp":"2025-12-15T15:19:32.508Z"}
+{"level":"info","message":"📱 Project ID: supasoka-18128","service":"supasoka-backend","timestamp":"2025-12-15T15:19:32.508Z"}
+{"level":"info","message":"📱 Loading Firebase credentials from JSON file","service":"supasoka-backend","timestamp":"2025-12-15T15:25:00.351Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully","service":"supasoka-backend","timestamp":"2025-12-15T15:25:00.424Z"}
+{"level":"info","message":"📱 Project ID: supasoka-18128","service":"supasoka-backend","timestamp":"2025-12-15T15:25:00.425Z"}
+{"level":"info","message":"📱 Loading Firebase credentials from JSON file","service":"supasoka-backend","timestamp":"2025-12-15T15:33:45.261Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully","service":"supasoka-backend","timestamp":"2025-12-15T15:33:45.335Z"}
+{"level":"info","message":"📱 Project ID: supasoka-18128","service":"supasoka-backend","timestamp":"2025-12-15T15:33:45.336Z"}
+{"level":"info","message":"📱 Filtered 1 valid tokens from 1 total","service":"supasoka-backend","timestamp":"2025-12-15T15:33:47.287Z"}
+{"level":"info","message":"📱 Sending FCM notification to 1 devices","service":"supasoka-backend","timestamp":"2025-12-15T15:33:47.288Z"}
+{"level":"info","message":"   Title: \"Direct Token Test\"","service":"supasoka-backend","timestamp":"2025-12-15T15:33:47.288Z"}
+{"level":"info","message":"   Message: \"Testing direct push to a specific token\"","service":"supasoka-backend","timestamp":"2025-12-15T15:33:47.289Z"}
+{"level":"info","message":"   Type: test","service":"supasoka-backend","timestamp":"2025-12-15T15:33:47.289Z"}
+{"level":"info","message":"✅ FCM notification sent successfully","service":"supasoka-backend","timestamp":"2025-12-15T15:33:48.177Z"}
+{"level":"info","message":"   Success: 0/1","service":"supasoka-backend","timestamp":"2025-12-15T15:33:48.178Z"}
+{"level":"info","message":"   Failed: 1","service":"supasoka-backend","timestamp":"2025-12-15T15:33:48.178Z"}
+{"level":"warn","message":"   Failed token: FCM_android_17656633... - Credential implementation provided to initializeApp() via the \"credential\" property failed to fetch a valid Google OAuth2 access token with the following error: \"invalid_grant: Invalid JWT: Token must be a short-lived token (60 minutes) and in a reasonable timeframe. Check your iat and exp values in the JWT claim.\". There are two likely causes: (1) your server time is not properly synced or (2) your certificate key file has been revoked. To solve (1), re-sync the time on your server. To solve (2), make sure the key ID for your key file is still present at https://console.firebase.google.com/iam-admin/serviceaccounts/project. If not, generate a new key file at https://console.firebase.google.com/project/_/settings/serviceaccounts/adminsdk.","service":"supasoka-backend","timestamp":"2025-12-15T15:33:48.179Z"}
+{"level":"info","message":"📱 Loading Firebase credentials from JSON file","service":"supasoka-backend","timestamp":"2025-12-15T15:35:08.265Z"}
+{"level":"error","message":"❌ Failed to initialize Firebase Admin SDK: admin.instanceId(...).then is not a function","service":"supasoka-backend","stack":"TypeError: admin.instanceId(...).then is not a function\n    at PushNotificationService.initializeFirebase (C:\\Users\\ayoub\\Supasoka\\backend\\services\\pushNotificationService.js:68:10)\n    at new PushNotificationService (C:\\Users\\ayoub\\Supasoka\\backend\\services\\pushNotificationService.js:15:10)\n    at Object.<anonymous> (C:\\Users\\ayoub\\Supasoka\\backend\\services\\pushNotificationService.js:532:18)\n    at Module._compile (node:internal/modules/cjs/loader:1734:14)\n    at Object..js (node:internal/modules/cjs/loader:1899:10)\n    at Module.load (node:internal/modules/cjs/loader:1469:32)\n    at Module._load (node:internal/modules/cjs/loader:1286:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:322:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)\n    at Module.require (node:internal/modules/cjs/loader:1491:12)","timestamp":"2025-12-15T15:35:08.464Z"}
+{"level":"info","message":"📱 Filtered 1 valid tokens from 1 total","service":"supasoka-backend","timestamp":"2025-12-15T15:35:09.955Z"}
+{"level":"warn","message":"⚠️ Firebase Admin not initialized; attempting legacy FCM fallback if configured","service":"supasoka-backend","timestamp":"2025-12-15T15:35:09.956Z"}
+{"level":"error","message":"❌ Firebase not initialized and no legacy FCM key configured","service":"supasoka-backend","timestamp":"2025-12-15T15:35:09.957Z"}
+{"level":"info","message":"📱 Loading Firebase credentials from JSON file","service":"supasoka-backend","timestamp":"2025-12-15T15:35:25.644Z"}
+{"level":"info","message":"✅ Firebase Admin SDK initialized successfully","service":"supasoka-backend","timestamp":"2025-12-15T15:35:25.727Z"}
+{"level":"info","message":"📱 Project ID: supasoka-18128","service":"supasoka-backend","timestamp":"2025-12-15T15:35:25.728Z"}
+{"level":"info","message":"📱 Filtered 1 valid tokens from 1 total","service":"supasoka-backend","timestamp":"2025-12-15T15:35:27.062Z"}
+{"level":"info","message":"📱 Sending FCM notification to 1 devices","service":"supasoka-backend","timestamp":"2025-12-15T15:35:27.063Z"}
+{"level":"info","message":"   Title: \"Direct Token Test\"","service":"supasoka-backend","timestamp":"2025-12-15T15:35:27.063Z"}
+{"level":"info","message":"   Message: \"Testing direct push to a specific token\"","service":"supasoka-backend","timestamp":"2025-12-15T15:35:27.064Z"}
+{"level":"info","message":"   Type: test","service":"supasoka-backend","timestamp":"2025-12-15T15:35:27.064Z"}
+{"level":"info","message":"✅ FCM notification sent successfully","service":"supasoka-backend","timestamp":"2025-12-15T15:35:27.688Z"}
+{"level":"info","message":"   Success: 0/1","service":"supasoka-backend","timestamp":"2025-12-15T15:35:27.689Z"}
+{"level":"info","message":"   Failed: 1","service":"supasoka-backend","timestamp":"2025-12-15T15:35:27.690Z"}
+{"level":"warn","message":"   Failed token: FCM_android_17656633... - Credential implementation provided to initializeApp() via the \"credential\" property failed to fetch a valid Google OAuth2 access token with the following error: \"invalid_grant: Invalid JWT: Token must be a short-lived token (60 minutes) and in a reasonable timeframe. Check your iat and exp values in the JWT claim.\". There are two likely causes: (1) your server time is not properly synced or (2) your certificate key file has been revoked. To solve (1), re-sync the time on your server. To solve (2), make sure the key ID for your key file is still present at https://console.firebase.google.com/iam-admin/serviceaccounts/project. If not, generate a new key file at https://console.firebase.google.com/project/_/settings/serviceaccounts/adminsdk.","service":"supasoka-backend","timestamp":"2025-12-15T15:35:27.690Z"}

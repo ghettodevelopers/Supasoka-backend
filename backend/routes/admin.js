@@ -91,6 +91,15 @@ router.get('/diagnostic/device-tokens', authMiddleware, adminOnly, async (req, r
       }))
     };
 
+    // Include Firebase credential/time health information if available
+    try {
+      const { validateCredentials } = require('../services/firebaseValidator');
+      const health = await validateCredentials();
+      diagnosis.firebaseHealth = health;
+    } catch (err) {
+      diagnosis.firebaseHealth = { error: 'Health check unavailable' };
+    }
+
     logger.info('📊 Device token diagnostic requested by admin');
     logger.info(`   Total users: ${totalUsers}`);
     logger.info(`   Users with tokens: ${usersWithTokens}`);
@@ -1611,7 +1620,7 @@ router.post('/notifications/send-realtime',
           title,
           message,
           type,
-          targetUsers: targetUsers || null,
+          targetUsers: targetUsers && Array.isArray(targetUsers) ? JSON.stringify(targetUsers) : (targetUsers || null),
           isActive: true,
           sentAt: new Date()
         }
@@ -1774,6 +1783,19 @@ router.post('/notifications/send-realtime',
         },
         message: `Notification sent to ${totalUsers} users (${onlineUsers} online, ${offlineUsers} offline, ${pushSent} push sent)`
       });
+    }
+  );
+
+  // Admin endpoint: Firebase credentials health check
+  router.get('/diagnostic/firebase-health', authMiddleware, adminOnly, async (req, res) => {
+    try {
+      const { validateCredentials } = require('../services/firebaseValidator');
+      const health = await validateCredentials();
+      res.json({ success: true, health });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message || 'Failed to run firebase health check' });
+    }
+  });
     } catch (error) {
       logger.error('❌ Error sending real-time notification:', error);
       res.status(500).json({ 

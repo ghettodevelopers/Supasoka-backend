@@ -1,7 +1,8 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import { Platform } from 'react-native';
+import { Platform, PermissionsAndroid } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import messaging from '@react-native-firebase/messaging';
+import PushNotification from 'react-native-push-notification';
 import io from 'socket.io-client';
 
 const API_BASE_URL = 'https://supasoka-backend.onrender.com/api';
@@ -20,9 +21,7 @@ export const NotificationProvider = ({ children }) => {
   const socketRef = React.useRef(null);
 
   useEffect(() => {
-    loadNotifications();
-    connectSocket();
-    setupFirebaseMessaging();
+    initializeNotifications();
 
     return () => {
       if (socketRef.current) {
@@ -30,6 +29,85 @@ export const NotificationProvider = ({ children }) => {
       }
     };
   }, []);
+
+  const initializeNotifications = async () => {
+    await requestNotificationPermissions();
+    configurePushNotifications();
+    loadNotifications();
+    connectSocket();
+    setupFirebaseMessaging();
+  };
+
+  /**
+   * Request notification permissions
+   */
+  const requestNotificationPermissions = async () => {
+    try {
+      if (Platform.OS === 'android') {
+        if (Platform.Version >= 33) {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+          );
+          console.log('📱 Notification permission:', granted);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error requesting notification permissions:', error);
+    }
+  };
+
+  /**
+   * Configure Push Notifications
+   */
+  const configurePushNotifications = () => {
+    PushNotification.configure({
+      onRegister: function (token) {
+        console.log('📱 Push notification token:', token);
+      },
+
+      onNotification: function (notification) {
+        console.log('📱 Push notification received:', notification);
+        
+        // Handle notification tap
+        if (notification.userInteraction) {
+          handleNotificationTap(notification);
+        }
+      },
+
+      onAction: function (notification) {
+        console.log('📱 Notification action:', notification.action);
+      },
+
+      onRegistrationError: function(err) {
+        console.error('❌ Push notification registration error:', err);
+      },
+
+      permissions: {
+        alert: true,
+        badge: true,
+        sound: true,
+      },
+
+      popInitialNotification: true,
+      requestPermissions: true,
+    });
+
+    // Create notification channel for Android
+    PushNotification.createChannel(
+      {
+        channelId: 'supasoka_notifications',
+        channelName: 'Supasoka Notifications',
+        channelDescription: 'Notifications from Supasoka admin',
+        playSound: true,
+        soundName: 'default',
+        importance: 4,
+        vibrate: true,
+      },
+      (created) => console.log(`📱 Notification channel created: ${created}`)
+    );
+
+    console.log('✅ Push notifications configured');
+  };
 
   /**
    * Setup Firebase Cloud Messaging
@@ -53,6 +131,10 @@ export const NotificationProvider = ({ children }) => {
             read: false
           };
 
+          // Display in status bar
+          showLocalNotification(notification);
+          
+          // Add to notification list
           addNotification(notification);
         }
       });
@@ -81,10 +163,39 @@ export const NotificationProvider = ({ children }) => {
   };
 
   /**
+   * Show local notification in status bar
+   */
+  const showLocalNotification = (notification) => {
+    try {
+      PushNotification.localNotification({
+        channelId: 'supasoka_notifications',
+        title: notification.title || 'Supasoka',
+        message: notification.message || '',
+        playSound: true,
+        soundName: 'default',
+        importance: 'high',
+        vibrate: true,
+        vibration: 300,
+        priority: 'high',
+        visibility: 'public',
+        userInfo: {
+          type: notification.type,
+          id: notification.id,
+        },
+        smallIcon: 'ic_notification',
+        largeIcon: 'ic_launcher',
+      });
+      console.log('✅ Local notification displayed:', notification.title);
+    } catch (error) {
+      console.error('❌ Error showing local notification:', error);
+    }
+  };
+
+  /**
    * Handle notification tap
    */
   const handleNotificationTap = (remoteMessage) => {
-    const type = remoteMessage.data?.type;
+    const type = remoteMessage.data?.type || remoteMessage.userInfo?.type;
 
     if (global.navigateToScreen) {
       switch (type) {
@@ -186,7 +297,7 @@ export const NotificationProvider = ({ children }) => {
     });
 
     socket.on('new-notification', (data) => {
-      console.log('📡 New notification:', data);
+      console.log('📡 New notification via Socket.IO:', data);
       const notification = {
         id: data.id || Date.now().toString(),
         title: data.title || 'Taarifa',
@@ -195,6 +306,29 @@ export const NotificationProvider = ({ children }) => {
         timestamp: data.timestamp || new Date().toISOString(),
         read: false
       };
+      
+      // Display in status bar
+      showLocalNotification(notification);
+      
+      // Add to notification list
+      addNotification(notification);
+    });
+
+    socket.on('immediate-notification', (data) => {
+      console.log('📡 Immediate notification via Socket.IO:', data);
+      const notification = {
+        id: data.id || Date.now().toString(),
+        title: data.title || 'Taarifa',
+        message: data.message,
+        type: data.type || 'general',
+        timestamp: data.timestamp || new Date().toISOString(),
+        read: false
+      };
+      
+      // Display in status bar immediately
+      showLocalNotification(notification);
+      
+      // Add to notification list
       addNotification(notification);
     });
 
