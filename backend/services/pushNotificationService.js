@@ -3,7 +3,7 @@ const logger = require('../utils/logger');
 
 /**
  * Firebase Cloud Messaging Push Notification Service
- * 
+ *
  * Uses Firebase Admin SDK to send push notifications to mobile devices
  * Supports sending to individual devices, multiple devices, and topics
  */
@@ -100,9 +100,9 @@ class PushNotificationService {
     }
 
     // Filter out invalid tokens
-    const validTokens = deviceTokens.filter(token => 
-      token && 
-      typeof token === 'string' && 
+    const validTokens = deviceTokens.filter(token =>
+      token &&
+      typeof token === 'string' &&
       token.length > 20 &&
       token !== 'null' &&
       token !== 'undefined'
@@ -125,20 +125,30 @@ class PushNotificationService {
       if (process.env.FCM_LEGACY_SERVER_KEY) {
         const fcmMessage = {
           notification: {
-            title: title,
-            body: message,
+            title: title || 'Supasoka',
+            body: message || '',
           },
           data: {
             type: type,
             timestamp: new Date().toISOString(),
+            title: title || 'Supasoka',
+            message: message || '',
+            click_action: 'FLUTTER_NOTIFICATION_CLICK',
           },
           android: {
             priority: 'high',
             notification: {
               channelId: 'supasoka_notifications',
-              priority: 'high',
+              priority: 'max', // Maximum priority for status bar display
               sound: 'default',
+              defaultSound: true,
               defaultVibrateTimings: true,
+              defaultLightSettings: true,
+              visibility: 'public',
+              notificationPriority: 'PRIORITY_MAX',
+              ticker: `${title}: ${message}`,
+              showWhen: true,
+              importance: 'HIGH',
             }
           },
           apns: {
@@ -148,8 +158,13 @@ class PushNotificationService {
             },
             payload: {
               aps: {
+                alert: {
+                  title: title || 'Supasoka',
+                  body: message || '',
+                },
                 sound: 'default',
                 badge: 1,
+                'content-available': 1,
               }
             }
           }
@@ -190,7 +205,8 @@ class PushNotificationService {
       logger.info(`   Message: "${message}"`);
       logger.info(`   Type: ${type}`);
 
-      // Prepare FCM message with enhanced configuration
+      // Prepare FCM message with MAXIMUM priority for status bar display
+      // This ensures notifications ALWAYS show in status bar, even when app is closed
       const fcmMessage = {
         notification: {
           title: title || 'Supasoka',
@@ -201,23 +217,36 @@ class PushNotificationService {
           timestamp: new Date().toISOString(),
           title: title || 'Supasoka',
           message: message || '',
+          // Add click_action for better notification handling
+          click_action: 'FLUTTER_NOTIFICATION_CLICK',
         },
         android: {
-          priority: 'high',
+          priority: 'high', // High priority for immediate delivery
           notification: {
             channelId: 'supasoka_notifications',
-            priority: 'high',
+            priority: 'max', // CHANGED: max priority for heads-up notification
             sound: 'default',
+            defaultSound: true,
             defaultVibrateTimings: true,
-            visibility: 'public',
+            defaultLightSettings: true,
+            visibility: 'public', // Show on lock screen
+            notificationPriority: 'PRIORITY_MAX', // Maximum priority
+            notificationCount: 1,
             tag: type,
+            ticker: `${title}: ${message}`, // Status bar ticker text
+            // Critical for status bar display
+            showWhen: true,
+            localOnly: false,
+            sticky: false,
+            // Ensures notification wakes device and shows as heads-up
+            importance: 'HIGH',
           },
-          ttl: 86400, // 24 hours
+          ttl: 86400000, // 24 hours in milliseconds
         },
         apns: {
           headers: {
             'apns-push-type': 'alert',
-            'apns-priority': '10'
+            'apns-priority': '10' // Maximum priority for iOS
           },
           payload: {
             aps: {
@@ -228,7 +257,17 @@ class PushNotificationService {
               sound: 'default',
               badge: 1,
               'content-available': 1,
+              'mutable-content': 1,
             }
+          }
+        },
+        // Add webpush config for completeness
+        webpush: {
+          notification: {
+            title: title || 'Supasoka',
+            body: message || '',
+            icon: '/icon.png',
+            requireInteraction: true,
           }
         }
       };
