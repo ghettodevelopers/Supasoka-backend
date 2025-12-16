@@ -274,22 +274,26 @@ const ChannelsScreen = ({ route }) => {
         channelName: channelData.name
       });
 
+      let result;
       if (editingChannel) {
-        await channelService.updateChannel(editingChannel.id, channelData);
-        Alert.alert('✅ Success', 'Channel updated successfully!');
+        result = await channelService.updateChannel(editingChannel.id, channelData);
       } else {
-        await channelService.createChannel(channelData);
-        Alert.alert('✅ Success', formData.isFree ? 'Free channel created successfully!' : 'Channel created successfully!');
+        result = await channelService.createChannel(channelData);
       }
 
-      setModalVisible(false);
-      setFreeChannelModalVisible(false);
-      await loadChannels();
+      // Only show success if result is valid
+      if (result && result.id) {
+        Alert.alert('✅ Success', formData.isFree ? 'Free channel created successfully!' : (editingChannel ? 'Channel updated successfully!' : 'Channel created successfully!'));
+        setModalVisible(false);
+        setFreeChannelModalVisible(false);
+        await loadChannels();
+      } else {
+        throw new Error('No channel returned from server');
+      }
     } catch (error) {
       console.error('Save error:', error);
       console.error('Error response:', error.response?.data);
       console.error('Error status:', error.response?.status);
-      
       let errorMessage = 'Failed to save channel';
       if (error.response?.data?.error) {
         errorMessage = error.response.data.error;
@@ -299,7 +303,6 @@ const ChannelsScreen = ({ route }) => {
       } else if (error.message) {
         errorMessage = error.message;
       }
-      
       Alert.alert('❌ Error', errorMessage);
     } finally {
       setSaving(false);

@@ -116,7 +116,7 @@ const PlayerScreen = ({ route, navigation }) => {
 
       // Check if DRM is enabled - fast check using drmConfig presence
       const hasDRM = parsedDrmConfig && parsedDrmConfig.clearKey;
-      
+
       // Build optimized video source based on format
       let source = {
         uri: channel.streamUrl,
@@ -130,72 +130,64 @@ const PlayerScreen = ({ route, navigation }) => {
         type: videoType === 'hls' ? 'm3u8' : videoType === 'dash' ? 'mpd' : undefined,
       };
 
-      if (hasDRM) {
+      if (hasDRM && videoType === 'dash') {
         console.log('🔐 DRM channel detected - processing clearkey...');
         setDrmLoading(true);
-
         try {
           // Get clearKey from parsed config
           const clearKeyString = parsedDrmConfig.clearKey;
-          
           if (clearKeyString && clearKeyString.trim()) {
-            console.log('🔑 ClearKey found:', clearKeyString.substring(0, 8) + '...');
-            
             // Parse ClearKey format
             let keyId = clearKeyString;
             let key = clearKeyString;
-            
-            // If clearKey contains ":", split it into keyId and key
             if (clearKeyString.includes(':')) {
               const parts = clearKeyString.split(':');
               keyId = parts[0].trim();
               key = parts[1] ? parts[1].trim() : parts[0].trim();
-              console.log('🔑 Split ClearKey - KeyID:', keyId.substring(0, 8) + '...', 'Key:', key.substring(0, 8) + '...');
             }
-            
-            // For DASH/MPD content with ClearKey DRM
-            if (videoType === 'dash') {
-              // ClearKey DRM configuration for react-native-video (DASH)
-              source.drm = {
-                type: 'clearkey',
-                licenseServer: '', // Not needed for ClearKey
-                headers: {},
-                // ClearKey specific configuration
-                clearkey: {
-                  keyId: keyId,
-                  key: key,
-                },
-              };
-              console.log('✅ ClearKey DRM config prepared for DASH');
-            } else {
-              // For HLS or other formats, use Widevine/FairPlay
-              source.drm = {
-                type: Platform.select({
-                  android: 'widevine',
-                  ios: 'fairplay',
-                }),
-                licenseServer: '', 
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-              };
-              console.log('✅ DRM config prepared for', videoType);
+            // Validate keys: must be 32 hex chars for DASH
+            const hex32 = /^[0-9a-fA-F]{32}$/;
+            if (!hex32.test(keyId) || !hex32.test(key)) {
+              setError('DRM ClearKey format invalid. Both KeyID and Key must be 32 hex characters.');
+              setLoading(false);
+              setDrmLoading(false);
+              return;
             }
+            source.drm = {
+              type: 'clearkey',
+              licenseServer: '',
+              headers: {},
+              clearkey: {
+                keyId: keyId,
+                key: key,
+              },
+            };
+            console.log('✅ ClearKey DRM config prepared for DASH');
           } else {
-            console.warn('⚠️ ClearKey is empty, playing without DRM');
+            setError('DRM ClearKey is missing. Cannot play this channel.');
+            setLoading(false);
+            setDrmLoading(false);
+            return;
           }
         } catch (drmError) {
           console.error('❌ DRM setup error:', drmError);
-          console.error('   Error details:', drmError.message);
-          // Continue without DRM
+          setError('DRM setup error: ' + drmError.message);
+          setLoading(false);
+          setDrmLoading(false);
+          return;
         }
         setDrmLoading(false);
+      } else if (hasDRM && videoType !== 'dash') {
+        // Warn if DRM is set but not DASH
+        setError('DRM ClearKey is only supported for DASH (.mpd) streams.');
+        setLoading(false);
+        setDrmLoading(false);
+        return;
       }
 
       // Set video source - this triggers the video player
       console.log('✅ Setting video source:', source.uri);
       setVideoSource(source);
-      
       // Don't set loading to false here - wait for onLoad callback
       console.log('✅ Video source set, waiting for player...');
     } catch (err) {
