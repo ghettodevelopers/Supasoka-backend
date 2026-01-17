@@ -1825,7 +1825,6 @@ router.post('/notifications/send-realtime',
       res.status(500).json({ success: false, error: err.message || 'Failed to run firebase health check' });
     }
   });
-);
 
 // Get all sent notifications (admin view)
 router.get('/notifications/admin/all', authMiddleware, adminOnly, async (req, res) => {
