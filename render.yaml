@@ -5,10 +5,12 @@ services:
     plan: free
     region: oregon
     rootDir: backend
-    buildCommand: npm install && npx prisma generate
+    buildCommand: npm install && npx prisma generate && npx prisma db push --accept-data-loss
     startCommand: npm start
     healthCheckPath: /health
     envVars:
+      - key: DATABASE_URL
+        value: file:./dev.db
       - key: JWT_SECRET
         value: supasoka_jwt_secret_key_2024_production_ready_32chars_minimum
       - key: JWT_EXPIRES_IN
