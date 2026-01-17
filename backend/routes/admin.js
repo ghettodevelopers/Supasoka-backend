@@ -1804,8 +1804,16 @@ router.post('/notifications/send-realtime',
         },
         message: `Notification sent to ${totalUsers} users (${onlineUsers} online, ${offlineUsers} offline, ${pushSent} push sent)`
       });
+    } catch (error) {
+      logger.error('Error sending real-time notification:', error);
+      res.status(500).json({ 
+        success: false,
+        error: 'Failed to send notification',
+        details: error.message 
+      });
     }
-  );
+  }
+);
 
   // Admin endpoint: Firebase credentials health check
   router.get('/diagnostic/firebase-health', authMiddleware, adminOnly, async (req, res) => {
@@ -1817,7 +1825,6 @@ router.post('/notifications/send-realtime',
       res.status(500).json({ success: false, error: err.message || 'Failed to run firebase health check' });
     }
   });
-    } catch (error) {
       logger.error('❌ Error sending real-time notification:', error);
       res.status(500).json({ 
         success: false,
