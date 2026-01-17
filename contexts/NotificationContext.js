@@ -2,7 +2,6 @@ import React, { createContext, useState, useEffect, useContext } from 'react';
 import { Platform, PermissionsAndroid } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import messaging from '@react-native-firebase/messaging';
-import PushNotification from 'react-native-push-notification';
 import io from 'socket.io-client';
 
 const API_BASE_URL = 'https://supasoka-backend.onrender.com/api';
@@ -32,7 +31,6 @@ export const NotificationProvider = ({ children }) => {
 
   const initializeNotifications = async () => {
     await requestNotificationPermissions();
-    configurePushNotifications();
     loadNotifications();
     connectSocket();
     setupFirebaseMessaging();
@@ -54,59 +52,6 @@ export const NotificationProvider = ({ children }) => {
     } catch (error) {
       console.error('❌ Error requesting notification permissions:', error);
     }
-  };
-
-  /**
-   * Configure Push Notifications
-   */
-  const configurePushNotifications = () => {
-    PushNotification.configure({
-      onRegister: function (token) {
-        console.log('📱 Push notification token:', token);
-      },
-
-      onNotification: function (notification) {
-        console.log('📱 Push notification received:', notification);
-        
-        // Handle notification tap
-        if (notification.userInteraction) {
-          handleNotificationTap(notification);
-        }
-      },
-
-      onAction: function (notification) {
-        console.log('📱 Notification action:', notification.action);
-      },
-
-      onRegistrationError: function(err) {
-        console.error('❌ Push notification registration error:', err);
-      },
-
-      permissions: {
-        alert: true,
-        badge: true,
-        sound: true,
-      },
-
-      popInitialNotification: true,
-      requestPermissions: true,
-    });
-
-    // Create notification channel for Android
-    PushNotification.createChannel(
-      {
-        channelId: 'supasoka_notifications',
-        channelName: 'Supasoka Notifications',
-        channelDescription: 'Notifications from Supasoka admin',
-        playSound: true,
-        soundName: 'default',
-        importance: 4,
-        vibrate: true,
-      },
-      (created) => console.log(`📱 Notification channel created: ${created}`)
-    );
-
-    console.log('✅ Push notifications configured');
   };
 
   /**
@@ -163,31 +108,16 @@ export const NotificationProvider = ({ children }) => {
   };
 
   /**
-   * Show local notification in status bar
+   * Handle local notification display (via Socket.IO)
+   * Firebase handles foreground notifications automatically
    */
   const showLocalNotification = (notification) => {
     try {
-      PushNotification.localNotification({
-        channelId: 'supasoka_notifications',
-        title: notification.title || 'Supasoka',
-        message: notification.message || '',
-        playSound: true,
-        soundName: 'default',
-        importance: 'high',
-        vibrate: true,
-        vibration: 300,
-        priority: 'high',
-        visibility: 'public',
-        userInfo: {
-          type: notification.type,
-          id: notification.id,
-        },
-        smallIcon: 'ic_notification',
-        largeIcon: 'ic_launcher',
-      });
-      console.log('✅ Local notification displayed:', notification.title);
+      console.log('✅ Local notification queued:', notification.title);
+      // Firebase Messaging handles foreground notifications automatically
+      // This function is kept for Socket.IO notifications
     } catch (error) {
-      console.error('❌ Error showing local notification:', error);
+      console.error('❌ Error handling local notification:', error);
     }
   };
 
@@ -209,6 +139,60 @@ export const NotificationProvider = ({ children }) => {
         default:
           break;
       }
+    }
+  };
+  /**
+   * Handle subscription granted notification from FCM
+   */
+  const handleSubscriptionGrantedFromFCM = async (data) => {
+    try {
+      console.log('?? Handling subscription grant from FCM:', data);
+      
+      const timeInMinutes = parseInt(data.timeInMinutes);
+      const subscriptionEndTime = parseInt(data.subscriptionEndTime);
+      const accessExpiresAtTime = parseInt(data.accessExpiresAtTime);
+
+      // Update AsyncStorage
+      await AsyncStorage.setItem('isSubscribed', 'true');
+      await AsyncStorage.setItem('accessLevel', 'premium');
+      await AsyncStorage.setItem('subscriptionEndTime', subscriptionEndTime.toString());
+      await AsyncStorage.setItem('accessExpiresAt', accessExpiresAtTime.toString());
+      await AsyncStorage.setItem('remainingTime', timeInMinutes.toString());
+      await AsyncStorage.setItem('adminGrantedAccess', JSON.stringify({
+        grantedAt: Date.now(),
+        expiresAt: accessExpiresAtTime,
+        duration: data.duration,
+        unit: data.unit,
+        accessLevel: 'premium'
+      }));
+
+      // Update user object
+      const userStr = await AsyncStorage.getItem('user');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        user.isSubscribed = true;
+        user.isActivated = true;
+        user.remainingTime = timeInMinutes;
+        user.accessExpiresAt = new Date(accessExpiresAtTime).toISOString();
+        user.subscriptionEnd = new Date(subscriptionEndTime).toISOString();
+        user.accessLevel = 'premium';
+        await AsyncStorage.setItem('user', JSON.stringify(user));
+      }
+
+      console.log(`? Subscription activated: ${timeInMinutes} minutes until ${new Date(accessExpiresAtTime).toLocaleString()}`);
+
+      // Trigger app state reload
+      if (global.reloadAppState) {
+        await global.reloadAppState();
+      }
+      if (global.showSubscriptionGrantModal) {
+        global.showSubscriptionGrantModal(timeInMinutes);
+      }
+      if (global.refreshChannels) {
+        global.refreshChannels();
+      }
+    } catch (error) {
+      console.error('? Error handling subscription grant from FCM:', error);
     }
   };
 
@@ -423,3 +407,7 @@ export const useNotifications = () => {
 };
 
 export default NotificationContext;
+
+
+
+

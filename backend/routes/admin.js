@@ -1356,6 +1356,28 @@ router.post('/users/:userId/grant-subscription',
         });
       }
 
+      // Send FCM push notification to ensure user receives it even if app is closed
+      if (user.deviceToken) {
+        try {
+          await pushNotificationService.sendToUser(userId, {
+            title: 'Umepewa Muda wa Kutazama! ??',
+            body: Hongera! Msimamizi amekupa muda wa   wa kutazama vituo vyote.,
+            data: {
+              type: 'subscription_granted',
+              duration: duration.toString(),
+              unit: unit,
+              timeInMinutes: timeInMinutes.toString(),
+              subscriptionEndTime: subscriptionEndTime.toString(),
+              accessExpiresAtTime: accessExpiresAtTime.toString(),
+              allChannelsUnlocked: 'true'
+            }
+          });
+          logger.info(? FCM notification sent to user );
+        } catch (fcmError) {
+          logger.error('? Failed to send FCM notification:', fcmError);
+        }
+      }
+
       // Send real-time notification with subscriptionEndTime for accurate countdown
       const io = req.app.get('io');
       const subscriptionEndTime = subscriptionEnd.getTime(); // Timestamp in milliseconds
@@ -2596,3 +2618,4 @@ router.delete('/:id',
 
 // Export the router
 module.exports = router;
+
