@@ -1825,14 +1825,6 @@ router.post('/notifications/send-realtime',
       res.status(500).json({ success: false, error: err.message || 'Failed to run firebase health check' });
     }
   });
-      logger.error('❌ Error sending real-time notification:', error);
-      res.status(500).json({ 
-        success: false,
-        error: 'Failed to send notification',
-        details: error.message 
-      });
-    }
-  }
 );
 
 // Get all sent notifications (admin view)
