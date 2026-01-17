@@ -1355,13 +1355,12 @@ router.post('/users/:userId/grant-subscription',
           }
         });
       }
-
       // Send FCM push notification to ensure user receives it even if app is closed
       if (user.deviceToken) {
         try {
           await pushNotificationService.sendToUser(userId, {
-            title: 'Umepewa Muda wa Kutazama! ??',
-            body: Hongera! Msimamizi amekupa muda wa   wa kutazama vituo vyote.,
+            title: 'Umepewa Muda wa Kutazama!!',
+            body: `Hongera! Msimamizi amekupa muda wa ${duration} ${unit} wa kutazama vituo vyote.`,
             data: {
               type: 'subscription_granted',
               duration: duration.toString(),
@@ -1372,9 +1371,9 @@ router.post('/users/:userId/grant-subscription',
               allChannelsUnlocked: 'true'
             }
           });
-          logger.info(? FCM notification sent to user );
+          logger.info(`FCM notification sent to user ${userId}`);
         } catch (fcmError) {
-          logger.error('? Failed to send FCM notification:', fcmError);
+          logger.error('Failed to send FCM notification:', fcmError);
         }
       }
 
