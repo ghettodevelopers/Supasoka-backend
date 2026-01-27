@@ -1,30 +1,31 @@
-# Use Node.js 18 LTS
+# Use Node.js 18 LTS (Fly.io; avoids buildpack Prisma symlink errors)
 FROM node:18-alpine
 
-# Set working directory
+# Install curl for healthchecks and openssl for Prisma
+RUN apk add --no-cache curl openssl
+
 WORKDIR /app
 
-# Copy package files
+# Copy package files first for better layer caching
 COPY package*.json ./
+COPY prisma ./prisma/
 
-# Install dependencies
-RUN npm ci --only=production
+# Install all deps (Prisma is in dependencies); then generate client
+RUN npm ci && npx prisma generate
 
-# Copy source code
+# Remove Prisma CLI from runtime if desired (keeps image smaller)
+# Prisma Client is in node_modules/@prisma/client
+
+# Copy rest of app
 COPY . .
 
-# Create logs directory
+# Create dirs used at runtime
 RUN mkdir -p logs uploads
 
-# Generate Prisma client
-RUN npx prisma generate
+# Fly.io: must listen on 0.0.0.0:8080
+ENV HOST=0.0.0.0
+ENV PORT=8080
+EXPOSE 8080
 
-# Expose port
-EXPOSE 3000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
-
-# Start the application
-CMD ["npm", "start"]
+# Start via start.js (runs prisma db push then server)
+CMD ["node", "scripts/start.js"]

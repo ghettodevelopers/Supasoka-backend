@@ -4,6 +4,7 @@ const { PrismaClient } = require('@prisma/client');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
 const logger = require('../utils/logger');
 const auditLogService = require('../services/auditLogService');
+const { handleDatabaseError } = require('../utils/dbErrorHandler');
 
 
 const router = express.Router();
@@ -285,14 +286,27 @@ router.get('/carousel/admin', authMiddleware, adminOnly, async (req, res) => {
       orderBy: { order: 'asc' }
     });
 
-    logger.info(`Admin fetched ${images.length} carousel images`);
-    res.json({ images });
+    logger.info(`✅ Admin fetched ${images.length} carousel images`);
+    res.json({ 
+      success: true,
+      images 
+    });
   } catch (error) {
-    logger.error('Error fetching admin carousel images:', error.message);
+    logger.error('❌ Error fetching admin carousel images:', error);
 
-    // If database unavailable, return empty array
-    logger.info('Database error - returning empty carousel array');
-    res.json({ images: [] });
+    // Use the database error handler
+    if (error.name === 'PrismaClientInitializationError' || 
+        (error.code && error.code.startsWith('P'))) {
+      return handleDatabaseError(error, res, 'Fetch carousel images');
+    }
+
+    // Return empty array on other errors
+    logger.warn('Database error - returning empty carousel array');
+    res.json({ 
+      success: false,
+      images: [],
+      error: 'Failed to load carousel images'
+    });
   }
 });
 
@@ -403,16 +417,24 @@ router.post('/',
       // Send notification about new channel
       // Notification handled by Firebase in admin routes
 
-      logger.info(`Channel created: "${channel.name}" (${channel.category}) by admin ${req.admin.email}`);
-      res.status(201).json({ channel: formattedChannel });
+      logger.info(`✅ Channel created: "${channel.name}" (${channel.category}) by admin ${req.admin.email}`);
+      res.status(201).json({ 
+        success: true,
+        channel: formattedChannel,
+        message: 'Channel created successfully'
+      });
     } catch (error) {
-      if (error?.name === 'PrismaClientInitializationError') {
-        return res.status(503).json({ error: 'Database unavailable. Please ensure PostgreSQL is running.' });
+      logger.error('❌ Error creating channel:', error);
+      
+      // Use the database error handler
+      if (error.name === 'PrismaClientInitializationError' || 
+          (error.code && error.code.startsWith('P'))) {
+        return handleDatabaseError(error, res, 'Create channel');
       }
-      logger.error('Error creating channel:', error.message || error);
+
       res.status(500).json({
         error: 'Failed to create channel',
-        details: error.message
+        message: error.message || 'An error occurred while creating the channel'
       });
     }
   }
@@ -546,20 +568,25 @@ router.put('/:id',
       // Send notification about channel update
       // Notification handled by Firebase in admin routes
 
-      logger.info(`Channel updated: ${channel.name} by admin ${req.admin.email}`);
-      res.json({ channel: formattedChannel });
+      logger.info(`✅ Channel updated: ${channel.name} by admin ${req.admin.email}`);
+      res.json({ 
+        success: true,
+        channel: formattedChannel,
+        message: 'Channel updated successfully'
+      });
     } catch (error) {
-      if (error?.code === 'P2025') {
-        return res.status(404).json({ error: 'Channel not found' });
+      logger.error('❌ Error updating channel:', error);
+      
+      // Use the database error handler
+      if (error.name === 'PrismaClientInitializationError' || 
+          (error.code && error.code.startsWith('P'))) {
+        return handleDatabaseError(error, res, 'Update channel');
       }
-      if (error?.name === 'PrismaClientInitializationError') {
-        return res.status(503).json({ error: 'Database unavailable. Please ensure PostgreSQL is running.' });
-      }
-      if (error?.name === 'PrismaClientInitializationError') {
-        return res.status(503).json({ error: 'Database unavailable. Please ensure PostgreSQL is running.' });
-      }
-      logger.error('Error updating channel:', error.message || error);
-      res.status(500).json({ error: 'Failed to update channel', details: error.message });
+
+      res.status(500).json({ 
+        error: 'Failed to update channel',
+        message: error.message || 'An error occurred while updating the channel'
+      });
     }
   }
 );
@@ -736,20 +763,25 @@ router.delete('/:id',
       // Send notification about channel deletion
       // Notification handled by Firebase in admin routes
 
-      logger.info(`Channel deleted: ${channelToDelete.name} by admin ${req.admin.email}`);
-      res.json({ message: 'Channel deleted successfully' });
+      logger.info(`✅ Channel deleted: ${channelToDelete.name} by admin ${req.admin.email}`);
+      res.json({ 
+        success: true,
+        message: 'Channel deleted successfully',
+        channelId
+      });
     } catch (error) {
-      if (error?.code === 'P2025') {
-        return res.status(404).json({ error: 'Channel not found' });
+      logger.error('❌ Error deleting channel:', error);
+      
+      // Use the database error handler
+      if (error.name === 'PrismaClientInitializationError' || 
+          (error.code && error.code.startsWith('P'))) {
+        return handleDatabaseError(error, res, 'Delete channel');
       }
-      if (error?.name === 'PrismaClientInitializationError') {
-        return res.status(503).json({ error: 'Database unavailable. Please ensure PostgreSQL is running.' });
-      }
-      if (error?.name === 'PrismaClientInitializationError') {
-        return res.status(503).json({ error: 'Database unavailable. Please ensure PostgreSQL is running.' });
-      }
-      logger.error('Error deleting channel:', error.message || error);
-      res.status(500).json({ error: 'Failed to delete channel', details: error.message });
+
+      res.status(500).json({ 
+        error: 'Failed to delete channel',
+        message: error.message || 'An error occurred while deleting the channel'
+      });
     }
   }
 );
@@ -763,16 +795,23 @@ router.post('/carousel', authMiddleware, adminOnly, async (req, res) => {
 
     // Validation
     if (!imageUrl || !imageUrl.trim()) {
-      return res.status(400).json({ error: 'Image URL is required' });
+      return res.status(400).json({ 
+      error: 'Validation failed',
+      message: 'Image URL is required'
+    });
     }
 
-    if (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://')) {
-      return res.status(400).json({ error: 'Image URL must be a valid HTTP/HTTPS URL' });
+    const trimmedImageUrl = imageUrl.trim();
+    if (!trimmedImageUrl.startsWith('http://') && !trimmedImageUrl.startsWith('https://')) {
+      return res.status(400).json({ 
+        error: 'Validation failed',
+        message: 'Image URL must be a valid HTTP/HTTPS URL'
+      });
     }
 
     const carouselImage = await prisma.carouselImage.create({
       data: {
-        imageUrl: imageUrl.trim(),
+        imageUrl: trimmedImageUrl,
         title: title?.trim() || '',
         description: description?.trim() || '',
         linkUrl: linkUrl?.trim() || '',
@@ -783,15 +822,28 @@ router.post('/carousel', authMiddleware, adminOnly, async (req, res) => {
 
     // Notify clients about new carousel image
     const io = req.app.get('io');
-    io.emit('carousel-updated', { action: 'added', image: carouselImage });
+    if (io) {
+      io.emit('carousel-updated', { action: 'added', image: carouselImage });
+    }
 
-    logger.info(`Carousel image created: "${carouselImage.title}" by admin ${req.admin.email}`);
-    res.status(201).json({ image: carouselImage });
+    logger.info(`✅ Carousel image created: "${carouselImage.title}" by admin ${req.admin.email}`);
+    res.status(201).json({ 
+      success: true,
+      image: carouselImage,
+      message: 'Carousel image created successfully'
+    });
   } catch (error) {
-    logger.error('Error creating carousel image:', error);
+    logger.error('❌ Error creating carousel image:', error);
+    
+    // Use the database error handler
+    if (error.name === 'PrismaClientInitializationError' || 
+        (error.code && error.code.startsWith('P'))) {
+      return handleDatabaseError(error, res, 'Create carousel image');
+    }
+
     res.status(500).json({
       error: 'Failed to create carousel image',
-      details: error.message
+      message: error.message || 'An error occurred while creating the carousel image'
     });
   }
 });
@@ -829,16 +881,24 @@ router.put('/carousel/:id', authMiddleware, adminOnly, async (req, res) => {
     const io = req.app.get('io');
     io.emit('carousel-updated', { action: 'updated', image: carouselImage });
 
-    logger.info(`Carousel image updated: "${carouselImage.title}" by admin ${req.admin.email}`);
-    res.json({ image: carouselImage });
+    logger.info(`✅ Carousel image updated: "${carouselImage.title}" by admin ${req.admin.email}`);
+    res.json({ 
+      success: true,
+      image: carouselImage,
+      message: 'Carousel image updated successfully'
+    });
   } catch (error) {
-    if (error?.code === 'P2025') {
-      return res.status(404).json({ error: 'Carousel image not found' });
+    logger.error('❌ Error updating carousel image:', error);
+    
+    // Use the database error handler
+    if (error.name === 'PrismaClientInitializationError' || 
+        (error.code && error.code.startsWith('P'))) {
+      return handleDatabaseError(error, res, 'Update carousel image');
     }
-    logger.error('Error updating carousel image:', error);
+
     res.status(500).json({
       error: 'Failed to update carousel image',
-      details: error.message
+      message: error.message || 'An error occurred while updating the carousel image'
     });
   }
 });
@@ -865,16 +925,24 @@ router.delete('/carousel/:id', authMiddleware, adminOnly, async (req, res) => {
     const io = req.app.get('io');
     io.emit('carousel-updated', { action: 'deleted', imageId });
 
-    logger.info(`Carousel image deleted: "${carouselToDelete.title}" by admin ${req.admin.email}`);
-    res.json({ message: 'Carousel image deleted successfully' });
+    logger.info(`✅ Carousel image deleted: "${carouselToDelete.title}" by admin ${req.admin.email}`);
+    res.json({ 
+      success: true,
+      message: 'Carousel image deleted successfully',
+      imageId
+    });
   } catch (error) {
-    if (error?.code === 'P2025') {
-      return res.status(404).json({ error: 'Carousel image not found' });
+    logger.error('❌ Error deleting carousel image:', error);
+    
+    // Use the database error handler
+    if (error.name === 'PrismaClientInitializationError' || 
+        (error.code && error.code.startsWith('P'))) {
+      return handleDatabaseError(error, res, 'Delete carousel image');
     }
-    logger.error('Error deleting carousel image:', error);
+
     res.status(500).json({
       error: 'Failed to delete carousel image',
-      details: error.message
+      message: error.message || 'An error occurred while deleting the carousel image'
     });
   }
 });
